@@ -1,25 +1,32 @@
 /*
  * ============================================================
  * 项目四：解决校园真实痛点的轻量化实用程序研发与日常运行日志验证
- * 校园生活费记账工具 v2.0（单文件版）
+ * 校园生活费记账工具 v3.0（单文件版）
  * 作者：陈曦 | 大一 | 信息与通信
  * GitHub: XiaoJiao-07/ICEC-2026-0142-ChenXi
  * ============================================================
  *
  * 本文件包含：
- *   1. 完整源代码（记账/统计/导出/交互菜单）
+ *   1. 完整源代码（记账/统计/导出/预算/趋势图/交互菜单）
  *   2. 8天真实消费数据（39笔，2026-10-15 ~ 2026-10-22）
  *   3. 8天 Telemetry 运行日志（含时间戳、调用频次、耗时、报错）
  *   4. 8位真实用户使用反馈
+ *
+ * v3.0 新增：
+ *   - 预算提醒：设置月度预算，超支自动警告
+ *   - 补记选日期：add 命令支持指定历史日期
+ *   - 消费趋势图：ASCII 柱状图展示每日消费走势
  *
  * 用法：
  *   node 项目四-校园生活费记账工具.js <命令> [参数]
  *
  * 命令：
- *   add <金额> <类别> [备注]   记一笔账
+ *   add <金额> <类别> [备注] [日期]  记一笔账（日期可选，格式 YYYY-MM-DD）
  *   list [天数]                查看最近N天记录
  *   summary [日期]             查看某日汇总
  *   weekly                     查看近7天报告
+ *   trend [天数]               查看消费趋势图（ASCII柱状图）
+ *   budget [金额]              设置/查看月度预算
  *   export                     导出CSV到桌面
  *   menu                       进入交互菜单
  *   logs                       查看Telemetry日志
@@ -40,6 +47,7 @@ const BASE_DIR = __dirname;
 const DATA_DIR = path.join(BASE_DIR, 'data');
 const LOG_DIR = path.join(BASE_DIR, 'process_logs');
 const DATA_FILE = path.join(DATA_DIR, 'expenses.json');
+const BUDGET_FILE = path.join(DATA_DIR, 'budget.json');
 const CATEGORIES = ['餐饮', '交通', '购物', '娱乐', '学习', '医疗', '其他'];
 const callCount = {};
 
@@ -277,23 +285,79 @@ function logTelemetry(action, details = '', error = '', elapsed = 0) {
 }
 
 // ==================== 核心功能 ====================
-function addExpense(amount, category, note = '') {
+function addExpense(amount, category, note = '', targetDate = null) {
   const start = Date.now();
   try {
     if (!CATEGORIES.includes(category)) throw new Error(`无效类别: ${category}，可选: ${CATEGORIES.join(', ')}`);
     amount = parseFloat(amount);
     if (isNaN(amount) || amount <= 0) throw new Error('金额必须大于0');
     const data = loadData();
-    const today = new Date().toISOString().split('T')[0];
-    data.expenses.push({ id: data.expenses.length + 1, amount, category, note, date: today, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
+    const recordDate = targetDate || new Date().toISOString().split('T')[0];
+    if (targetDate && !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) throw new Error('日期格式错误，请使用 YYYY-MM-DD');
+    data.expenses.push({ id: data.expenses.length + 1, amount, category, note, date: recordDate, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
     saveData(data);
     const elapsed = Date.now() - start;
-    logTelemetry('add', `amount=${amount}, category=${category}`, '', elapsed);
-    console.log(`[OK] 已记录: ¥${amount.toFixed(2)} [${category}] ${note}  (耗时 ${elapsed}ms)`);
+    logTelemetry('add', `amount=${amount}, category=${category}, date=${recordDate}`, '', elapsed);
+    const dateTag = targetDate ? ` [补记 ${targetDate}]` : '';
+    console.log(`[OK] 已记录: ¥${amount.toFixed(2)} [${category}] ${note}${dateTag}  (耗时 ${elapsed}ms)`);
+    checkBudget(data);
   } catch (e) {
     logTelemetry('add', `amount=${amount}, category=${category}`, e.message, Date.now() - start);
     console.log(`[ERROR] ${e.message}`);
   }
+}
+
+function loadBudget() {
+  if (fs.existsSync(BUDGET_FILE)) return JSON.parse(fs.readFileSync(BUDGET_FILE, 'utf-8'));
+  return { monthly: 1500, month: new Date().toISOString().slice(0, 7) };
+}
+
+function saveBudget(budget) {
+  fs.writeFileSync(BUDGET_FILE, JSON.stringify(budget, null, 2), 'utf-8');
+}
+
+function checkBudget(data) {
+  const budget = loadBudget();
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  if (budget.month !== currentMonth) { budget.month = currentMonth; saveBudget(budget); }
+  const monthExpenses = data.expenses.filter(e => e.date.startsWith(currentMonth));
+  const spent = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const pct = (spent / budget.monthly * 100).toFixed(0);
+  if (spent >= budget.monthly) {
+    console.log(`\n⚠️  预算超支警告！本月已花 ¥${spent.toFixed(2)} / ¥${budget.monthly} (${pct}%)`);
+  } else if (pct >= 80) {
+    console.log(`\n⚡ 预算提醒：本月已花 ¥${spent.toFixed(2)} / ¥${budget.monthly} (${pct}%)，注意控制开支！`);
+  }
+}
+
+function setBudget(amount) {
+  amount = parseFloat(amount);
+  if (isNaN(amount) || amount <= 0) { console.log('[ERROR] 预算金额必须大于0'); return; }
+  const budget = loadBudget();
+  budget.monthly = amount;
+  saveBudget(budget);
+  console.log(`[OK] 月度预算已设为 ¥${amount.toFixed(2)}`);
+  logTelemetry('budget_set', `monthly=${amount}`, '', 0);
+}
+
+function showBudget() {
+  const budget = loadBudget();
+  const data = loadData();
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const monthExpenses = data.expenses.filter(e => e.date.startsWith(currentMonth));
+  const spent = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const remaining = budget.monthly - spent;
+  const pct = (spent / budget.monthly * 100).toFixed(1);
+  const barLen = Math.floor(pct / 2);
+  const bar = '█'.repeat(barLen) + '░'.repeat(50 - barLen);
+  console.log(`\n💰 月度预算（${currentMonth}）\n${'='.repeat(50)}`);
+  console.log(`  预算: ¥${budget.monthly.toFixed(2)}`);
+  console.log(`  已花: ¥${spent.toFixed(2)}  (${pct}%)`);
+  console.log(`  剩余: ¥${remaining.toFixed(2)}`);
+  console.log(`  [${bar}]`);
+  if (remaining < 0) console.log(`  ⚠️  已超支 ¥${Math.abs(remaining).toFixed(2)}！`);
+  else if (remaining < budget.monthly * 0.2) console.log(`  ⚡ 剩余不足20%，注意控制！`);
+  logTelemetry('budget_view', `spent=${spent.toFixed(2)}, budget=${budget.monthly}`, '', 0);
 }
 
 function listExpenses(days = 7) {
@@ -366,6 +430,36 @@ function exportCSV() {
   } catch (e) { logTelemetry('export_csv', '', e.message, Date.now() - start); console.log(`[ERROR] ${e.message}`); }
 }
 
+function showTrend(days = 7) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const filtered = data.expenses.filter(e => e.date >= cutoffStr);
+    if (filtered.length === 0) { console.log(`最近${days}天无记录`); return; }
+    const dailyMap = {};
+    for (const e of filtered) dailyMap[e.date] = (dailyMap[e.date] || 0) + e.amount;
+    const dates = Object.keys(dailyMap).sort();
+    const maxVal = Math.max(...Object.values(dailyMap));
+    console.log(`\n📈 近${days}天消费趋势图\n${'='.repeat(50)}`);
+    console.log(`  单位: ¥1 = ${Math.max(1, Math.round(maxVal / 20))}元\n`);
+    const unit = Math.max(1, Math.round(maxVal / 20));
+    for (const date of dates) {
+      const val = dailyMap[date];
+      const barLen = Math.round(val / unit);
+      const bar = '█'.repeat(barLen);
+      const dayLabel = date.slice(5);
+      const avg = val / 1;
+      console.log(`  ${dayLabel} | ${bar} ¥${val.toFixed(2).padStart(7)}`);
+    }
+    const total = Object.values(dailyMap).reduce((s, v) => s + v, 0);
+    const avg = total / dates.length;
+    console.log(`\n  总计: ¥${total.toFixed(2)}  日均: ¥${avg.toFixed(2)}  共${dates.length}天`);
+    logTelemetry('trend', `days=${days}, total=${total.toFixed(2)}`, '', Date.now() - start);
+  } catch (e) { logTelemetry('trend', `days=${days}`, e.message, Date.now() - start); console.log(`[ERROR] ${e.message}`); }
+}
+
 // ==================== 查看命令 ====================
 function showLogs() {
   console.log('\n📋 Telemetry 运行日志（8天）\n' + '='.repeat(50));
@@ -405,11 +499,12 @@ async function runMenu() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   while (true) {
     console.log('\n============================');
-    console.log('  校园生活费记账工具');
+    console.log('  校园生活费记账工具 v3.0');
     console.log('============================');
     console.log('  1. 记一笔账  2. 查看最近记录  3. 今日汇总');
-    console.log('  4. 近7天报告  5. 导出CSV  6. 查看日志');
-    console.log('  7. 用户反馈  8. 消费数据  0. 退出');
+    console.log('  4. 近7天报告  5. 消费趋势图  6. 预算管理');
+    console.log('  7. 导出CSV  8. 查看日志  9. 用户反馈');
+    console.log('  0. 退出');
     console.log('');
     const choice = (await ask(rl, '请输入数字：')).trim();
     if (choice === '1') {
@@ -417,15 +512,23 @@ async function runMenu() {
       console.log('类别：1餐饮 2交通 3购物 4娱乐 5学习 6医疗 7其他');
       const catNum = (await ask(rl, '选数字：')).trim();
       const note = (await ask(rl, '备注（直接回车跳过）：')).trim();
+      const useDate = (await ask(rl, '是否补记？(y/n，直接回车=n)：')).trim().toLowerCase();
+      let targetDate = null;
+      if (useDate === 'y') targetDate = (await ask(rl, '日期（YYYY-MM-DD）：')).trim();
       const cats = { '1': '餐饮', '2': '交通', '3': '购物', '4': '娱乐', '5': '学习', '6': '医疗', '7': '其他' };
-      addExpense(amount, cats[catNum] || '其他', note);
+      addExpense(amount, cats[catNum] || '其他', note, targetDate);
     } else if (choice === '2') { listExpenses(); }
     else if (choice === '3') { dailySummary(); }
     else if (choice === '4') { weeklyReport(); }
-    else if (choice === '5') { exportCSV(); }
-    else if (choice === '6') { showLogs(); }
-    else if (choice === '7') { showFeedback(); }
-    else if (choice === '8') { showData(); }
+    else if (choice === '5') { showTrend(); }
+    else if (choice === '6') {
+      const sub = (await ask(rl, '1.查看预算  2.设置预算：')).trim();
+      if (sub === '2') { const amt = (await ask(rl, '月度预算金额（元）：')).trim(); setBudget(amt); }
+      else { showBudget(); }
+    }
+    else if (choice === '7') { exportCSV(); }
+    else if (choice === '8') { showLogs(); }
+    else if (choice === '9') { showFeedback(); }
     else if (choice === '0') { console.log('再见！'); rl.close(); process.exit(0); }
     else { console.log('无效输入，请重试'); }
   }
@@ -434,22 +537,32 @@ async function runMenu() {
 // ==================== 主入口 ====================
 function showHelp() {
   console.log(`
-项目四：校园生活费记账工具 v2.0（单文件版）
+项目四：校园生活费记账工具 v3.0（单文件版）
 ============================================
 用法: node 项目四-校园生活费记账工具.js <命令> [参数]
 
 命令:
-  add <金额> <类别> [备注]   记一笔账
+  add <金额> <类别> [备注] [日期]  记一笔账（日期可选，补记用）
     类别: 餐饮 交通 购物 娱乐 学习 医疗 其他
+    示例: node 项目四-校园生活费记账工具.js add 15 餐饮 午餐
+    补记: node 项目四-校园生活费记账工具.js add 15 餐饮 午餐 2026-10-20
+
   list [天数]                查看最近N天记录 (默认7天)
   summary [日期]             查看某日汇总 (默认今天)
   weekly                     查看近7天报告
+  trend [天数]               查看消费趋势图 (ASCII柱状图，默认7天)
+  budget [金额]              设置/查看月度预算
   export                     导出CSV到桌面
   logs                       查看Telemetry运行日志
   feedback                   查看8位用户反馈
   data                       查看消费数据明细
   menu                       进入交互菜单
   help                       显示帮助
+
+v3.0 新增功能:
+  - 预算提醒：超80%警告，超100%超支警告
+  - 补记选日期：add 命令第4个参数指定历史日期
+  - 消费趋势图：ASCII 柱状图展示每日消费走势
 `);
 }
 
@@ -460,10 +573,12 @@ function main() {
   if (args.length === 0) { showHelp(); return; }
   const cmd = args[0].toLowerCase();
   switch (cmd) {
-    case 'add': if (args.length < 3) { console.log('用法: node 项目四-校园生活费记账工具.js add <金额> <类别> [备注]'); return; } addExpense(args[1], args[2], args[3] || ''); break;
+    case 'add': if (args.length < 3) { console.log('用法: node 项目四-校园生活费记账工具.js add <金额> <类别> [备注] [日期]'); return; } addExpense(args[1], args[2], args[3] || '', args[4] || null); break;
     case 'list': listExpenses(parseInt(args[1]) || 7); break;
     case 'summary': dailySummary(args[1] || null); break;
     case 'weekly': weeklyReport(); break;
+    case 'trend': showTrend(parseInt(args[1]) || 7); break;
+    case 'budget': if (args[1]) { setBudget(args[1]); } else { showBudget(); } break;
     case 'export': exportCSV(); break;
     case 'logs': showLogs(); break;
     case 'feedback': showFeedback(); break;
