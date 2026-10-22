@@ -12,6 +12,7 @@
  *
  * 命令：
  *   add <金额> <类别> [备注]   记一笔账
+ *   batch <金额,类别,备注|...>  批量记账（多条用|分隔）
  *   list [天数]                查看最近N天记录
  *   summary [日期]             查看某日汇总
  *   weekly                     查看近7天报告
@@ -25,7 +26,7 @@
  * ============================================================
  */
 
-const { ensureDirs, loadData, logTelemetry, addExpense, listExpenses,
+const { ensureDirs, loadData, logTelemetry, addExpense, batchAdd, listExpenses,
   dailySummary, weeklyReport, exportCSV, showLogs, showData, SEED_LOGS } = require('./main');
 const readline = require('readline');
 
@@ -113,6 +114,7 @@ function main() {
   const cmd = args[0].toLowerCase();
   switch (cmd) {
     case 'add': if (args.length < 3) { console.log('Usage: node app.js add <amount> <category> [note]'); return; } addExpense(args[1], args[2], args[3] || ''); break;
+    case 'batch': if (args.length < 2) { console.log('Usage: node app.js batch "3,餐饮,早餐|13,餐饮,午餐"'); return; } batchAdd(args[1]); break;
     case 'list': listExpenses(parseInt(args[1]) || 7); break;
     case 'summary': dailySummary(args[1] || null); break;
     case 'weekly': weeklyReport(); break;

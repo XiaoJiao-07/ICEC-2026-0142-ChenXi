@@ -256,6 +256,38 @@ function addExpense(amount, category, note = '') {
   }
 }
 
+// v1.1 新增：批量记账（基于日志分析：用户每天多次调用add，王同学反馈"每天吃饭都要记太麻烦"）
+function batchAdd(input) {
+  const start = Date.now();
+  try {
+    const entries = input.split('|').map(s => s.trim()).filter(s => s);
+    if (entries.length === 0) throw new Error('批量记账格式: 金额,类别,备注|金额,类别,备注');
+    const data = loadData();
+    const today = new Date().toISOString().split('T')[0];
+    let added = 0;
+    const errors = [];
+    for (const entry of entries) {
+      const parts = entry.split(',').map(s => s.trim());
+      if (parts.length < 2) { errors.push('格式错误: ' + entry); continue; }
+      const amount = parseFloat(parts[0]);
+      const category = parts[1];
+      const note = parts[2] || '';
+      if (isNaN(amount) || amount <= 0) { errors.push('金额无效: ' + entry); continue; }
+      if (!CATEGORIES.includes(category)) { errors.push('类别无效: ' + entry); continue; }
+      data.expenses.push({ id: data.expenses.length + 1, amount, category, note, date: today, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
+      added++;
+    }
+    saveData(data);
+    const elapsed = Date.now() - start;
+    logTelemetry('batch_add', 'entries=' + entries.length + ', added=' + added, errors.join('; '), elapsed);
+    console.log('[OK] 批量记账完成: 成功 ' + added + '/' + entries.length + ' 笔 (耗时 ' + elapsed + 'ms)');
+    if (errors.length > 0) { console.log('[WARN] 以下条目跳过:'); errors.forEach(function(e) { console.log('  - ' + e); }); }
+  } catch (e) {
+    logTelemetry('batch_add', 'input=' + input, e.message, Date.now() - start);
+    console.log('[ERROR] ' + e.message);
+  }
+}
+
 function listExpenses(days = 7) {
   const start = Date.now();
   try {
@@ -350,6 +382,6 @@ function showData() {
 
 module.exports = {
   ensureDirs, loadData, saveData, logTelemetry,
-  addExpense, listExpenses, dailySummary, weeklyReport, exportCSV,
+  addExpense, batchAdd, listExpenses, dailySummary, weeklyReport, exportCSV,
   showLogs, showData, SEED_LOGS, CATEGORIES
 };
