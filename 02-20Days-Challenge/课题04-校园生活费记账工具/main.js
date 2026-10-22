@@ -288,6 +288,46 @@ function batchAdd(input) {
   }
 }
 
+// v1.2 新增：删除记录（陈同学反馈"记错了想删掉或者修改，发现没有这个功能"）
+function deleteExpense(id) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    id = parseInt(id);
+    const idx = data.expenses.findIndex(function(e) { return e.id === id; });
+    if (idx === -1) throw new Error('记录不存在: ID=' + id);
+    const removed = data.expenses.splice(idx, 1)[0];
+    saveData(data);
+    const elapsed = Date.now() - start;
+    logTelemetry('delete', 'id=' + id + ', amount=' + removed.amount, '', elapsed);
+    console.log('[OK] 已删除: ID=' + id + ' ' + removed.amount.toFixed(2) + ' [' + removed.category + '] ' + removed.note);
+  } catch (e) {
+    logTelemetry('delete', 'id=' + id, e.message, Date.now() - start);
+    console.log('[ERROR] ' + e.message);
+  }
+}
+
+// v1.2 新增：修改记录
+function modifyExpense(id, amount, category, note) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    id = parseInt(id);
+    const item = data.expenses.find(function(e) { return e.id === id; });
+    if (!item) throw new Error('记录不存在: ID=' + id);
+    if (amount !== undefined) { amount = parseFloat(amount); if (isNaN(amount) || amount <= 0) throw new Error('金额必须大于0'); item.amount = amount; }
+    if (category !== undefined) { if (!CATEGORIES.includes(category)) throw new Error('无效类别: ' + category); item.category = category; }
+    if (note !== undefined) item.note = note;
+    saveData(data);
+    const elapsed = Date.now() - start;
+    logTelemetry('modify', 'id=' + id, '', elapsed);
+    console.log('[OK] 已修改: ID=' + id + ' -> ' + item.amount.toFixed(2) + ' [' + item.category + '] ' + item.note);
+  } catch (e) {
+    logTelemetry('modify', 'id=' + id, e.message, Date.now() - start);
+    console.log('[ERROR] ' + e.message);
+  }
+}
+
 function listExpenses(days = 7) {
   const start = Date.now();
   try {
@@ -382,6 +422,7 @@ function showData() {
 
 module.exports = {
   ensureDirs, loadData, saveData, logTelemetry,
-  addExpense, batchAdd, listExpenses, dailySummary, weeklyReport, exportCSV,
+  addExpense, batchAdd, deleteExpense, modifyExpense,
+  listExpenses, dailySummary, weeklyReport, exportCSV,
   showLogs, showData, SEED_LOGS, CATEGORIES
 };

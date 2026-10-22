@@ -13,6 +13,8 @@
  * 命令：
  *   add <金额> <类别> [备注]   记一笔账
  *   batch <金额,类别,备注|...>  批量记账（多条用|分隔）
+ *   delete <ID>                删除某条记录
+ *   modify <ID> <金额> <类别> [备注]  修改某条记录
  *   list [天数]                查看最近N天记录
  *   summary [日期]             查看某日汇总
  *   weekly                     查看近7天报告
@@ -26,7 +28,7 @@
  * ============================================================
  */
 
-const { ensureDirs, loadData, logTelemetry, addExpense, batchAdd, listExpenses,
+const { ensureDirs, loadData, logTelemetry, addExpense, batchAdd, deleteExpense, modifyExpense, listExpenses,
   dailySummary, weeklyReport, exportCSV, showLogs, showData, SEED_LOGS } = require('./main');
 const readline = require('readline');
 
@@ -87,12 +89,15 @@ async function runMenu() {
 // ==================== CLI 入口 ====================
 function showHelp() {
   console.log(`
-Campus Expense Tracker v1.0
+Campus Expense Tracker v1.2
 ============================
 Usage: node app.js <command> [args]
 
 Commands:
   add <amount> <category> [note]  Add an expense
+  batch <amount,cat,note|...>     Batch add expenses
+  delete <id>                     Delete a record by ID
+  modify <id> <amount> <cat> [note]  Modify a record
     Categories: 餐饮 交通 购物 娱乐 学习 医疗 其他
   list [days]                     View recent N days (default 7)
   summary [date]                  Daily summary (default today)
@@ -115,6 +120,8 @@ function main() {
   switch (cmd) {
     case 'add': if (args.length < 3) { console.log('Usage: node app.js add <amount> <category> [note]'); return; } addExpense(args[1], args[2], args[3] || ''); break;
     case 'batch': if (args.length < 2) { console.log('Usage: node app.js batch "3,餐饮,早餐|13,餐饮,午餐"'); return; } batchAdd(args[1]); break;
+    case 'delete': if (args.length < 2) { console.log('Usage: node app.js delete <id>'); return; } deleteExpense(args[1]); break;
+    case 'modify': if (args.length < 4) { console.log('Usage: node app.js modify <id> <amount> <category> [note]'); return; } modifyExpense(args[1], args[2], args[3], args[4] || ''); break;
     case 'list': listExpenses(parseInt(args[1]) || 7); break;
     case 'summary': dailySummary(args[1] || null); break;
     case 'weekly': weeklyReport(); break;
