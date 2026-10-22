@@ -1,0 +1,13 @@
+{"timestamp":"2026-10-17 07:30:00","action":"startup","details":"args=add","elapsed_ms":1,"call_count":1,"error":""}
+{"timestamp":"2026-10-17 07:30:00","action":"startup","details":"args=add,6,餐饮","elapsed_ms":1,"call_count":2,"error":""}
+{"timestamp":"2026-10-17 07:30:01","action":"add","details":"amount=6, category=餐饮","elapsed_ms":1,"call_count":3,"error":""}
+{"timestamp":"2026-10-17 12:00:00","action":"startup","details":"args=add,14,餐饮","elapsed_ms":1,"call_count":4,"error":""}
+{"timestamp":"2026-10-17 12:00:01","action":"add","details":"amount=14, category=餐饮","elapsed_ms":5,"call_count":5,"error":""}
+{"timestamp":"2026-10-17 18:00:00","action":"startup","details":"args=add,12,餐饮","elapsed_ms":1,"call_count":6,"error":""}
+{"timestamp":"2026-10-17 18:00:01","action":"add","details":"amount=12, category=餐饮","elapsed_ms":3,"call_count":7,"error":""}
+{"timestamp":"2026-10-17 14:00:00","action":"startup","details":"args=add,2,餐饮","elapsed_ms":1,"call_count":8,"error":""}
+{"timestamp":"2026-10-17 14:00:01","action":"add","details":"amount=2, category=餐饮","elapsed_ms":5,"call_count":9,"error":""}
+{"timestamp":"2026-10-17 20:00:00","action":"startup","details":"args=add,36.2,购物","elapsed_ms":1,"call_count":10,"error":""}
+{"timestamp":"2026-10-17 20:00:01","action":"add","details":"amount=36.2, category=购物","elapsed_ms":2,"call_count":11,"error":""}
+{"timestamp":"2026-10-17 22:30:00","action":"startup","details":"args=summary","elapsed_ms":1,"call_count":12,"error":""}
+{"timestamp":"2026-10-17 22:30:01","action":"summary","details":"date=2026-10-17","elapsed_ms":12,"call_count":13,"error":""}
