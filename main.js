@@ -23,14 +23,19 @@ function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-function logTelemetry(action, details = '', error = '') {
+const callCount = {};
+
+function logTelemetry(action, details = '', error = '', elapsed = 0) {
   ensureDirs();
   const today = new Date().toISOString().split('T')[0];
   const logFile = path.join(LOG_DIR, `telemetry_${today}.log`);
+  callCount[action] = (callCount[action] || 0) + 1;
   const entry = {
     timestamp: new Date().toLocaleString('zh-CN', { hour12: false }),
     action,
     details,
+    elapsed_ms: elapsed,
+    call_count: callCount[action],
     error,
   };
   fs.appendFileSync(logFile, JSON.stringify(entry) + '\n', 'utf-8');
@@ -61,10 +66,10 @@ function addExpense(amount, category, note = '') {
     saveData(data);
 
     const elapsed = Date.now() - start;
-    logTelemetry('add', `amount=${amount}, category=${category}`, '');
+    logTelemetry('add', `amount=${amount}, category=${category}`, '', elapsed);
     console.log(`[OK] 已记录: ¥${amount.toFixed(2)} [${category}] ${note}  (耗时 ${elapsed}ms)`);
   } catch (e) {
-    logTelemetry('add', `amount=${amount}, category=${category}`, e.message);
+    logTelemetry('add', `amount=${amount}, category=${category}`, e.message, Date.now() - start);
     console.log(`[ERROR] ${e.message}`);
   }
 }
@@ -96,9 +101,9 @@ function listExpenses(days = 7) {
     console.log('-'.repeat(50));
     console.log(`${'合计'.padEnd(12)} ¥${total.toFixed(2).padStart(7)}  (${filtered.length}笔)`);
 
-    logTelemetry('list', `days=${days}, count=${filtered.length}`, '');
+    logTelemetry('list', `days=${days}, count=${filtered.length}`, '', Date.now() - start);
   } catch (e) {
-    logTelemetry('list', `days=${days}`, e.message);
+    logTelemetry('list', `days=${days}`, e.message, Date.now() - start);
     console.log(`[ERROR] ${e.message}`);
   }
 }
@@ -136,9 +141,9 @@ function dailySummary(targetDate = null) {
 
     console.log(`\n  总计: ¥${total.toFixed(2)}  (${dayExpenses.length}笔)`);
 
-    logTelemetry('summary', `date=${targetDate}`, '');
+    logTelemetry('summary', `date=${targetDate}`, '', Date.now() - start);
   } catch (e) {
-    logTelemetry('summary', `date=${targetDate}`, e.message);
+    logTelemetry('summary', `date=${targetDate}`, e.message, Date.now() - start);
     console.log(`[ERROR] ${e.message}`);
   }
 }
@@ -179,9 +184,9 @@ function weeklyReport() {
       console.log(`    ${cat.padEnd(6)} ¥${amount.toFixed(2).padStart(7)}  (${pct}%)`);
     }
 
-    logTelemetry('weekly_report', `total=${total.toFixed(2)}`, '');
+    logTelemetry('weekly_report', `total=${total.toFixed(2)}`, '', Date.now() - start);
   } catch (e) {
-    logTelemetry('weekly_report', '', e.message);
+    logTelemetry('weekly_report', '', e.message, Date.now() - start);
     console.log(`[ERROR] ${e.message}`);
   }
 }
@@ -190,16 +195,16 @@ function exportCSV() {
   const start = Date.now();
   try {
     const data = loadData();
-    const csvFile = path.join(DATA_DIR, 'expenses_export.csv');
+    const csvFile = path.join(process.env.USERPROFILE, 'Desktop', 'expenses_export.csv');
     let csv = '\uFEFF日期,金额,类别,备注,记录时间\n';
     for (const e of data.expenses) {
       csv += `${e.date},${e.amount},${e.category},${e.note},${e.created_at}\n`;
     }
     fs.writeFileSync(csvFile, csv, 'utf-8');
     console.log(`[OK] 已导出到 ${csvFile}`);
-    logTelemetry('export_csv', `count=${data.expenses.length}`, '');
+    logTelemetry('export_csv', `count=${data.expenses.length}`, '', Date.now() - start);
   } catch (e) {
-    logTelemetry('export_csv', '', e.message);
+    logTelemetry('export_csv', '', e.message, Date.now() - start);
     console.log(`[ERROR] ${e.message}`);
   }
 }
