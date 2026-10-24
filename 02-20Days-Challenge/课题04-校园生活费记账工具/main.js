@@ -1,0 +1,641 @@
+/*
+ * ============================================================
+ * 项目四：解决校园真实痛点的轻量化实用程序研发与日常运行日志验证
+ * 校园生活费记账工具 v3.0（多文件完整版）
+ * 作者：陈曦 | 大一 | 信息与通信
+ * GitHub: XiaoJiao-07/ICEC-2026-0142-ChenXi
+ * ============================================================
+ *
+ * 文件结构：
+ *   main.js              ← 主程序（本文件）
+ *   README.md            ← 项目文档
+ *   user_feedback.md     ← 8位用户反馈
+ *   raw_data/
+ *     consumption_raw.csv ← 原始消费数据（8天39笔）
+ *   process_logs/
+ *     log_2026-10-15.json ← 每日运行日志（8天）
+ *     ...
+ *   data/
+ *     expenses.json      ← 运行时数据（自动生成）
+ *     budget.json        ← 预算设置（自动生成）
+ *
+ * v3.0 新增功能：
+ *   - 预算提醒：设置月度预算，超80%警告，超100%超支警告
+ *   - 补记选日期：add 命令第4个参数指定历史日期
+ *   - 消费趋势图：ASCII 柱状图展示每日消费走势
+ *   - 批量记账：一次记录多条消费
+ *   - 删除/修改：管理已有记录
+ *
+ * 用法：
+ *   node main.js <命令> [参数]
+ *
+ * 命令：
+ *   add <金额> <类别> [备注] [日期]  记一笔账
+ *   batch "金额,类别,备注|..."       批量记账
+ *   delete <ID>                      删除记录
+ *   modify <ID> <金额> <类别> [备注] 修改记录
+ *   list [天数]                      查看最近N天记录
+ *   summary [日期]                   查看某日汇总
+ *   weekly                           查看近7天报告
+ *   trend [天数]                     查看消费趋势图
+ *   budget [金额]                    设置/查看月度预算
+ *   export                           导出CSV到桌面
+ *   logs                             查看Telemetry日志
+ *   feedback                         查看用户反馈
+ *   data                             查看消费数据
+ *   menu                             进入交互菜单
+ *   help                             显示帮助
+ *
+ * 类别：餐饮 交通 购物 娱乐 学习 医疗 其他
+ * ============================================================
+ */
+
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+
+// ==================== 配置 ====================
+const BASE_DIR = __dirname;
+const DATA_DIR = path.join(BASE_DIR, 'data');
+const LOG_DIR = path.join(BASE_DIR, 'process_logs');
+const RAW_DATA_DIR = path.join(BASE_DIR, 'raw_data');
+const DATA_FILE = path.join(DATA_DIR, 'expenses.json');
+const BUDGET_FILE = path.join(DATA_DIR, 'budget.json');
+const RAW_CSV_FILE = path.join(RAW_DATA_DIR, 'consumption_raw.csv');
+const FEEDBACK_FILE = path.join(BASE_DIR, 'user_feedback.md');
+const CATEGORIES = ['餐饮', '交通', '购物', '娱乐', '学习', '医疗', '其他'];
+const callCount = {};
+
+// ==================== 初始化 ====================
+function ensureDirs() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+}
+
+function loadData() {
+  if (fs.existsSync(DATA_FILE)) {
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+  }
+  // 从原始CSV加载种子数据
+  const expenses = [];
+  if (fs.existsSync(RAW_CSV_FILE)) {
+    const lines = fs.readFileSync(RAW_CSV_FILE, 'utf-8').trim().split('\n');
+    for (let i = 1; i < lines.length; i++) {
+      const [date, amount, category, note, time] = lines[i].split(',');
+      expenses.push({
+        id: expenses.length + 1,
+        date,
+        amount: parseFloat(amount),
+        category,
+        note,
+        time: time || '00:00',
+        created_at: new Date().toISOString()
+      });
+    }
+  }
+  const data = { expenses };
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  return data;
+}
+
+function saveData(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+function loadBudget() {
+  if (fs.existsSync(BUDGET_FILE)) {
+    return JSON.parse(fs.readFileSync(BUDGET_FILE, 'utf-8'));
+  }
+  return { monthly: 0 };
+}
+
+function saveBudget(budget) {
+  fs.writeFileSync(BUDGET_FILE, JSON.stringify(budget, null, 2), 'utf-8');
+}
+
+// ==================== Telemetry 日志 ====================
+function logTelemetry(action, details, error, elapsed) {
+  const today = new Date().toISOString().split('T')[0];
+  const logFile = path.join(LOG_DIR, `log_${today}.json`);
+  let logs = [];
+  if (fs.existsSync(logFile)) {
+    logs = JSON.parse(fs.readFileSync(logFile, 'utf-8'));
+  }
+  callCount[action] = (callCount[action] || 0) + 1;
+  logs.push({
+    timestamp: new Date().toLocaleString('zh-CN'),
+    action,
+    details,
+    elapsed_ms: Math.round(elapsed || 0),
+    call_count: callCount[action],
+    error: error || ''
+  });
+  fs.writeFileSync(logFile, JSON.stringify(logs, null, 2), 'utf-8');
+}
+
+// ==================== 核心功能 ====================
+function addExpense(amount, category, note = '', targetDate = null) {
+  const start = Date.now();
+  try {
+    if (!CATEGORIES.includes(category)) {
+      console.log(`[ERROR] 无效类别：${category}，可选：${CATEGORIES.join(' ')}`);
+      return;
+    }
+    const data = loadData();
+    const date = targetDate || new Date().toISOString().split('T')[0];
+    const expense = {
+      id: data.expenses.length > 0 ? Math.max(...data.expenses.map(e => e.id)) + 1 : 1,
+      date,
+      amount: parseFloat(amount),
+      category,
+      note,
+      time: new Date().toTimeString().slice(0, 5),
+      created_at: new Date().toISOString()
+    };
+    data.expenses.push(expense);
+    saveData(data);
+    console.log(`[OK] 已记录：¥${expense.amount.toFixed(2)} [${category}] ${note} (${date})`);
+    checkBudget();
+    logTelemetry('add', `amount=${amount}, category=${category}, date=${date}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('add', `amount=${amount}, category=${category}`, e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function batchAdd(input) {
+  const start = Date.now();
+  try {
+    // 支持中文逗号和英文逗号
+    const normalized = input.replace(/，/g, ',');
+    const items = normalized.split('|').map(s => s.trim());
+    const data = loadData();
+    let success = 0;
+    let nextId = data.expenses.length > 0 ? Math.max(...data.expenses.map(e => e.id)) + 1 : 1;
+    for (const item of items) {
+      const parts = item.split(',').map(s => s.trim());
+      if (parts.length < 2) continue;
+      const [amount, category, note] = parts;
+      if (!CATEGORIES.includes(category)) continue;
+      data.expenses.push({
+        id: nextId++,
+        date: new Date().toISOString().split('T')[0],
+        amount: parseFloat(amount),
+        category,
+        note: note || '',
+        time: new Date().toTimeString().slice(0, 5),
+        created_at: new Date().toISOString()
+      });
+      success++;
+    }
+    saveData(data);
+    console.log(`[OK] 批量记账完成：成功 ${success}/${items.length} 笔 (耗时 ${Date.now() - start}ms)`);
+    checkBudget();
+    logTelemetry('batch', `count=${success}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('batch', '', e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function deleteExpense(id) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const idx = data.expenses.findIndex(e => e.id === parseInt(id));
+    if (idx === -1) {
+      console.log(`[ERROR] 未找到ID=${id}的记录`);
+      return;
+    }
+    const removed = data.expenses.splice(idx, 1)[0];
+    saveData(data);
+    console.log(`[OK] 已删除：ID=${removed.id} ${removed.amount.toFixed(2)} [${removed.category}] ${removed.note}`);
+    logTelemetry('delete', `id=${id}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('delete', `id=${id}`, e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function modifyExpense(id, amount, category, note) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const expense = data.expenses.find(e => e.id === parseInt(id));
+    if (!expense) {
+      console.log(`[ERROR] 未找到ID=${id}的记录`);
+      return;
+    }
+    if (amount && amount !== '0') expense.amount = parseFloat(amount);
+    if (category && CATEGORIES.includes(category)) expense.category = category;
+    if (note) expense.note = note;
+    saveData(data);
+    console.log(`[OK] 已修改：ID=${expense.id} -> ${expense.amount.toFixed(2)} [${expense.category}] ${expense.note}`);
+    logTelemetry('modify', `id=${id}, amount=${amount}, category=${category}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('modify', `id=${id}`, e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function listExpenses(days = 7) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const filtered = data.expenses.filter(e => e.date >= cutoffStr);
+    if (filtered.length === 0) {
+      console.log(`最近${days}天无记录`);
+      return;
+    }
+    console.log(`\nID  日期                 金额  类别     备注`);
+    console.log('--------------------------------------------------');
+    let total = 0;
+    for (const e of filtered.sort((a, b) => b.date.localeCompare(a.date))) {
+      console.log(`${String(e.id).padStart(3)} ${e.date}   ¥${e.amount.toFixed(2).padStart(7)} ${e.category.padEnd(6)} ${e.note}`);
+      total += e.amount;
+    }
+    console.log('--------------------------------------------------');
+    console.log(`合计           ¥${total.toFixed(2)}  (${filtered.length}笔)`);
+    logTelemetry('list', `days=${days}, count=${filtered.length}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('list', `days=${days}`, e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function dailySummary(targetDate = null) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const date = targetDate || new Date().toISOString().split('T')[0];
+    const dayExpenses = data.expenses.filter(e => e.date === date);
+    if (dayExpenses.length === 0) {
+      console.log(`${date} 无记录`);
+      return;
+    }
+    const total = dayExpenses.reduce((sum, e) => sum + e.amount, 0);
+    console.log(`\n📊 ${date} 消费汇总\n${'='.repeat(40)}`);
+    console.log(`  总笔数：${dayExpenses.length}`);
+    console.log(`  总金额：¥${total.toFixed(2)}\n`);
+    const catMap = {};
+    for (const e of dayExpenses) {
+      catMap[e.category] = (catMap[e.category] || 0) + e.amount;
+    }
+    const maxAmount = Math.max(...Object.values(catMap));
+    console.log('  分类统计：');
+    for (const [cat, amount] of Object.entries(catMap).sort((a, b) => b[1] - a[1])) {
+      const barLen = Math.round((amount / maxAmount) * 20);
+      const bar = '█'.repeat(barLen);
+      const pct = ((amount / total) * 100).toFixed(1);
+      console.log(`    ${cat.padEnd(6)} ¥${amount.toFixed(2).padStart(7)}  ${bar} (${pct}%)`);
+    }
+    logTelemetry('summary', `date=${date}, total=${total.toFixed(2)}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('summary', `date=${targetDate}`, e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function weeklyReport() {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const weekExpenses = data.expenses.filter(e => e.date >= cutoffStr);
+    if (weekExpenses.length === 0) {
+      console.log('最近7天无记录');
+      return;
+    }
+    const total = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
+    console.log(`\n📈 近7天消费报告\n${'='.repeat(40)}`);
+    console.log(`  总支出：¥${total.toFixed(2)}`);
+    console.log(`  日均：  ¥${(total / 7).toFixed(2)}`);
+    console.log(`  笔数：  ${weekExpenses.length}\n`);
+    const catTotals = {};
+    for (const e of weekExpenses) catTotals[e.category] = (catTotals[e.category] || 0) + e.amount;
+    console.log('  分类占比：');
+    for (const [cat, amount] of Object.entries(catTotals).sort((a, b) => b[1] - a[1])) {
+      const pct = ((amount / total) * 100).toFixed(1);
+      console.log(`    ${cat.padEnd(6)} ¥${amount.toFixed(2).padStart(7)}  (${pct}%)`);
+    }
+    logTelemetry('weekly_report', `total=${total.toFixed(2)}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('weekly_report', '', e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function showTrend(days = 7) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const filtered = data.expenses.filter(e => e.date >= cutoffStr);
+    if (filtered.length === 0) {
+      console.log(`最近${days}天无记录`);
+      return;
+    }
+    const dailyMap = {};
+    for (const e of filtered) dailyMap[e.date] = (dailyMap[e.date] || 0) + e.amount;
+    const dates = Object.keys(dailyMap).sort();
+    const maxVal = Math.max(...Object.values(dailyMap));
+    console.log(`\n📈 近${days}天消费趋势图\n${'='.repeat(50)}`);
+    const unit = Math.max(1, Math.round(maxVal / 20));
+    console.log(`  单位：¥1 = ${unit}元\n`);
+    for (const date of dates) {
+      const val = dailyMap[date];
+      const barLen = Math.round(val / unit);
+      const bar = '█'.repeat(barLen);
+      const dayLabel = date.slice(5);
+      console.log(`  ${dayLabel} | ${bar} ¥${val.toFixed(2).padStart(7)}`);
+    }
+    const total = Object.values(dailyMap).reduce((s, v) => s + v, 0);
+    const avg = total / dates.length;
+    console.log(`\n  总计：¥${total.toFixed(2)}  日均：¥${avg.toFixed(2)}  共${dates.length}天`);
+    logTelemetry('trend', `days=${days}, total=${total.toFixed(2)}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('trend', `days=${days}`, e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function setBudget(amount) {
+  const start = Date.now();
+  try {
+    const budget = { monthly: parseFloat(amount) };
+    saveBudget(budget);
+    console.log(`[OK] 月度预算已设置为：¥${amount}`);
+    checkBudget();
+    logTelemetry('set_budget', `amount=${amount}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('set_budget', `amount=${amount}`, e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function showBudget() {
+  const start = Date.now();
+  try {
+    const budget = loadBudget();
+    if (budget.monthly === 0) {
+      console.log('尚未设置月度预算');
+      console.log('用法：node main.js budget <金额>');
+      return;
+    }
+    const data = loadData();
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    const monthExpenses = data.expenses.filter(e => e.date.startsWith(thisMonth));
+    const spent = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const pct = ((spent / budget.monthly) * 100).toFixed(1);
+    const remaining = budget.monthly - spent;
+    console.log(`\n💰 月度预算\n${'='.repeat(40)}`);
+    console.log(`  预算：  ¥${budget.monthly.toFixed(2)}`);
+    console.log(`  已支出：¥${spent.toFixed(2)} (${pct}%)`);
+    console.log(`  剩余：  ¥${remaining.toFixed(2)}`);
+    if (spent >= budget.monthly) {
+      console.log(`\n  ️  已超支 ¥${Math.abs(remaining).toFixed(2)}！`);
+    } else if (pct >= 80) {
+      console.log(`\n  ️  即将超支，请注意控制消费！`);
+    }
+    logTelemetry('show_budget', `monthly=${budget.monthly}, spent=${spent.toFixed(2)}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('show_budget', '', e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function checkBudget() {
+  const budget = loadBudget();
+  if (budget.monthly === 0) return;
+  const data = loadData();
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const monthExpenses = data.expenses.filter(e => e.date.startsWith(thisMonth));
+  const spent = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const pct = (spent / budget.monthly) * 100;
+  if (pct >= 100) {
+    console.log(`\n⚠️  预算警告：已超支 ¥${(spent - budget.monthly).toFixed(2)} (${pct.toFixed(1)}%)`);
+  } else if (pct >= 80) {
+    console.log(`\n⚠️  预算提醒：已使用 ${pct.toFixed(1)}%，剩余 ¥${(budget.monthly - spent).toFixed(2)}`);
+  }
+}
+
+function exportCSV() {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const csvFile = path.join(process.env.USERPROFILE, 'Desktop', 'expenses_export.csv');
+    let csv = '\uFEFF日期，金额，类别，备注，记录时间\n';
+    for (const e of data.expenses) {
+      csv += `${e.date},${e.amount},${e.category},${e.note},${e.created_at}\n`;
+    }
+    fs.writeFileSync(csvFile, csv, 'utf-8');
+    console.log(`[OK] 已导出到 ${csvFile}`);
+    logTelemetry('export_csv', `count=${data.expenses.length}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('export_csv', '', e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function showLogs() {
+  const start = Date.now();
+  try {
+    const logFiles = fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).sort();
+    if (logFiles.length === 0) {
+      console.log('暂无运行日志');
+      return;
+    }
+    console.log(`\n Telemetry 运行日志\n${'='.repeat(50)}`);
+    for (const file of logFiles) {
+      const logs = JSON.parse(fs.readFileSync(path.join(LOG_DIR, file), 'utf-8'));
+      const date = file.replace('log_', '').replace('.json', '');
+      console.log(`\n【${date}】共 ${logs.length} 条记录`);
+      for (const e of logs) {
+        const errTag = e.error ? ` [ERROR: ${e.error}]` : '';
+        console.log(`  ${e.timestamp} | ${e.action.padEnd(14)} | 耗时${String(e.elapsed_ms).padStart(3)}ms | 第${e.call_count}次调用${errTag}`);
+      }
+    }
+    logTelemetry('show_logs', `files=${logFiles.length}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('show_logs', '', e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function showFeedback() {
+  const start = Date.now();
+  try {
+    if (fs.existsSync(FEEDBACK_FILE)) {
+      const content = fs.readFileSync(FEEDBACK_FILE, 'utf-8');
+      console.log(content);
+    } else {
+      console.log('未找到用户反馈文件');
+    }
+    logTelemetry('show_feedback', '', '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('show_feedback', '', e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+function showData() {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    console.log(`\n 消费数据概览\n${'='.repeat(50)}`);
+    console.log(`  总笔数：${data.expenses.length}`);
+    if (data.expenses.length > 0) {
+      console.log(`  日期范围：${data.expenses[0].date} ~ ${data.expenses[data.expenses.length - 1].date}`);
+      const total = data.expenses.reduce((sum, e) => sum + e.amount, 0);
+      console.log(`  总金额：¥${total.toFixed(2)}`);
+    }
+    logTelemetry('show_data', `count=${data.expenses.length}`, '', Date.now() - start);
+  } catch (e) {
+    logTelemetry('show_data', '', e.message, Date.now() - start);
+    console.log(`[ERROR] ${e.message}`);
+  }
+}
+
+// ==================== 交互菜单 ====================
+function ask(rl, question) {
+  return new Promise(resolve => rl.question(question, resolve));
+}
+
+async function runMenu() {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  while (true) {
+    console.log('\n============================');
+    console.log('  校园生活费记账工具 v3.0');
+    console.log('============================');
+    console.log('  1. 记一笔账      2. 批量记账      3. 查看最近记录');
+    console.log('  4. 今日汇总      5. 近7天报告      6. 消费趋势图');
+    console.log('  7. 预算管理      8. 删除记录      9. 修改记录');
+    console.log('  A. 导出CSV      B. 查看日志      C. 用户反馈');
+    console.log('  D. 查看数据      0. 退出');
+    console.log('');
+    const choice = (await ask(rl, '请输入数字或字母：')).trim().toUpperCase();
+    if (choice === '1') {
+      const amount = (await ask(rl, '金额（元）：')).trim();
+      console.log('类别：1餐饮 2交通 3购物 4娱乐 5学习 6医疗 7其他');
+      const catNum = (await ask(rl, '选数字：')).trim();
+      const note = (await ask(rl, '备注（直接回车跳过）：')).trim();
+      const useDate = (await ask(rl, '是否补记？(y/n，直接回车=n)：')).trim().toLowerCase();
+      let targetDate = null;
+      if (useDate === 'y') targetDate = (await ask(rl, '日期（YYYY-MM-DD）：')).trim();
+      const cats = { '1': '餐饮', '2': '交通', '3': '购物', '4': '娱乐', '5': '学习', '6': '医疗', '7': '其他' };
+      addExpense(amount, cats[catNum] || '其他', note, targetDate);
+    } else if (choice === '2') {
+      console.log('格式：金额，类别，备注|金额，类别，备注');
+      console.log('示例：3,餐饮，早餐|13,餐饮，午餐|8,娱乐，奶茶');
+      const input = (await ask(rl, '请输入：')).trim();
+      batchAdd(input);
+    } else if (choice === '3') {
+      const days = (await ask(rl, '查看几天？(直接回车=7)：')).trim();
+      listExpenses(parseInt(days) || 7);
+    } else if (choice === '4') {
+      const date = (await ask(rl, '日期？(直接回车=今天，格式YYYY-MM-DD)：')).trim();
+      dailySummary(date || null);
+    } else if (choice === '5') { weeklyReport(); }
+    else if (choice === '6') {
+      const days = (await ask(rl, '几天趋势？(直接回车=7)：')).trim();
+      showTrend(parseInt(days) || 7);
+    }
+    else if (choice === '7') {
+      const sub = (await ask(rl, '1.查看预算  2.设置预算：')).trim();
+      if (sub === '2') { const amt = (await ask(rl, '月度预算金额（元）：')).trim(); setBudget(amt); }
+      else { showBudget(); }
+    }
+    else if (choice === '8') {
+      listExpenses(30);
+      const id = (await ask(rl, '要删除的记录ID：')).trim();
+      if (id) deleteExpense(id);
+    }
+    else if (choice === '9') {
+      listExpenses(30);
+      const id = (await ask(rl, '要修改的记录ID：')).trim();
+      const amount = (await ask(rl, '新金额（直接回车=不变）：')).trim();
+      const cat = (await ask(rl, '新类别（直接回车=不变）：')).trim();
+      const note = (await ask(rl, '新备注（直接回车=不变）：')).trim();
+      if (id) modifyExpense(id, amount || '0', cat || '其他', note || '');
+    }
+    else if (choice === 'A') { exportCSV(); }
+    else if (choice === 'B') { showLogs(); }
+    else if (choice === 'C') { showFeedback(); }
+    else if (choice === 'D') { showData(); }
+    else if (choice === '0') { console.log('再见！'); rl.close(); process.exit(0); }
+    else { console.log('无效输入，请重试'); }
+  }
+}
+
+// ==================== 帮助 ====================
+function showHelp() {
+  console.log(`
+项目四：校园生活费记账工具 v3.0（多文件完整版）
+============================================
+用法：node main.js <命令> [参数]
+
+命令：
+  add <金额> <类别> [备注] [日期]  记一笔账（日期可选，补记用）
+    类别：餐饮 交通 购物 娱乐 学习 医疗 其他
+    示例：node main.js add 15 餐饮 午餐
+    补记：node main.js add 15 餐饮 午餐 2026-10-20
+
+  batch "金额，类别，备注|..."       批量记账（用|分隔多条）
+  delete <ID>                      删除指定ID的记录
+  modify <ID> <金额> <类别> [备注]  修改指定ID的记录
+  list [天数]                      查看最近N天记录 (默认7天)
+  summary [日期]                   查看某日汇总 (默认今天)
+  weekly                           查看近7天报告
+  trend [天数]                     查看消费趋势图 (ASCII柱状图，默认7天)
+  budget [金额]                    设置/查看月度预算
+  export                           导出CSV到桌面
+  logs                             查看Telemetry运行日志
+  feedback                         查看8位用户反馈
+  data                             查看消费数据明细
+  menu                             进入交互菜单
+  help                             显示帮助
+
+v3.0 新增功能：
+  - 预算提醒：超80%警告，超100%超支警告
+  - 补记选日期：add 命令第4个参数指定历史日期
+  - 消费趋势图：ASCII 柱状图展示每日消费走势
+  - 批量记账：一次记录多条消费
+  - 删除/修改：管理已有记录
+`);
+}
+
+// ==================== 主入口 ====================
+function main() {
+  ensureDirs();
+  const args = process.argv.slice(2);
+  logTelemetry('startup', `args=${args.join(',')}`, '');
+  if (args.length === 0) { showHelp(); return; }
+  const cmd = args[0].toLowerCase();
+  switch (cmd) {
+    case 'add': if (args.length < 3) { console.log('用法：node main.js add <金额> <类别> [备注] [日期]'); return; } addExpense(args[1], args[2], args[3] || '', args[4] || null); break;
+    case 'batch': if (args.length < 2) { console.log('用法：node main.js batch "金额，类别，备注|..."'); return; } batchAdd(args[1]); break;
+    case 'delete': if (args.length < 2) { console.log('用法：node main.js delete <ID>'); return; } deleteExpense(args[1]); break;
+    case 'modify': if (args.length < 4) { console.log('用法：node main.js modify <ID> <金额> <类别> [备注]'); return; } modifyExpense(args[1], args[2], args[3], args[4] || ''); break;
+    case 'list': listExpenses(parseInt(args[1]) || 7); break;
+    case 'summary': dailySummary(args[1] || null); break;
+    case 'weekly': weeklyReport(); break;
+    case 'trend': showTrend(parseInt(args[1]) || 7); break;
+    case 'budget': if (args[1]) { setBudget(args[1]); } else { showBudget(); } break;
+    case 'export': exportCSV(); break;
+    case 'logs': showLogs(); break;
+    case 'feedback': showFeedback(); break;
+    case 'data': showData(); break;
+    case 'menu': runMenu(); break;
+    case 'help': showHelp(); break;
+    default: console.log(`未知命令：${cmd}，输入 help 查看帮助`);
+  }
+}
+
+main();

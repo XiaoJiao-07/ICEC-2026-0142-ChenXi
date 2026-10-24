@@ -36,15 +36,26 @@
 
 ## 文件说明
 
-本文件夹只有一个文件：
-
 ```
-项目四-校园生活费记账工具.js   ← 包含全部代码、数据、日志、反馈
+课题04-校园生活费记账工具/
+├── main.js                 ← 主程序（v3.0 完整版）
+├── 项目四-校园生活费记账工具.js  ← 单文件版（备用）
+├── README.md               ← 项目文档（本文件）
+├── user_feedback.md        ← 8位用户反馈详情
+├── raw_data/
+│   └── consumption_raw.csv ← 原始消费数据（8天39笔）
+├── process_logs/
+│   ├── log_2026-10-15.json ← 每日运行日志（8天）
+│   ├── log_2026-10-16.json
+│   └── ...
+└── data/                   ← 运行时数据（自动生成）
+    ├── expenses.json       ← 消费记录
+    └── budget.json         ← 预算设置
 ```
 
 首次运行时会自动初始化：
-- 将内置的8天消费数据（39笔）写入 `data/expenses.json`
-- 将内置的8天运行日志写入 `process_logs/` 目录
+- 从 `raw_data/consumption_raw.csv` 加载8天种子数据（39笔）到 `data/expenses.json`
+- 在 `process_logs/` 目录创建每日运行日志
 
 ## 环境要求
 
@@ -57,7 +68,7 @@
 ### 方式一：命令行
 
 ```bash
-node 项目四-校园生活费记账工具.js menu
+node main.js menu
 ```
 
 进入交互菜单后，输入数字选择功能即可。
@@ -66,47 +77,47 @@ node 项目四-校园生活费记账工具.js menu
 
 ```bash
 # 记一笔账
-node 项目四-校园生活费记账工具.js add 15 餐饮 午餐
+node main.js add 15 餐饮 午餐
 
 # 补记（指定历史日期）
-node 项目四-校园生活费记账工具.js add 15 餐饮 午餐 2026-10-20
+node main.js add 15 餐饮 午餐 2026-10-20
 
-# 批量记账（用|分隔多条）
-node 项目四-校园生活费记账工具.js batch "3,餐饮,早餐|13,餐饮,午餐|8,娱乐,奶茶"
+# 批量记账（用|分隔多条，支持中文逗号）
+node main.js batch "3,餐饮,早餐|13,餐饮,午餐|8,娱乐,奶茶"
 
 # 删除指定ID的记录
-node 项目四-校园生活费记账工具.js delete 42
+node main.js delete 42
 
 # 修改指定ID的记录
-node 项目四-校园生活费记账工具.js modify 42 15 餐饮 改备注
+node main.js modify 42 15 餐饮 改备注
 
 # 查看最近7天记录
-node 项目四-校园生活费记账工具.js list
+node main.js list
 
 # 查看今日汇总
-node 项目四-校园生活费记账工具.js summary
+node main.js summary
 
 # 查看近7天报告
-node 项目四-校园生活费记账工具.js weekly
+node main.js weekly
 
 # 查看消费趋势图
-node 项目四-校园生活费记账工具.js trend
+node main.js trend
 
 # 查看/设置月度预算
-node 项目四-校园生活费记账工具.js budget
-node 项目四-校园生活费记账工具.js budget 1500
+node main.js budget
+node main.js budget 1500
 
 # 导出CSV到桌面
-node 项目四-校园生活费记账工具.js export
+node main.js export
 
 # 查看Telemetry运行日志
-node 项目四-校园生活费记账工具.js logs
+node main.js logs
 
 # 查看用户反馈
-node 项目四-校园生活费记账工具.js feedback
+node main.js feedback
 
 # 查看消费数据
-node 项目四-校园生活费记账工具.js data
+node main.js data
 ```
 
 ## 消费类别
@@ -123,7 +134,7 @@ node 项目四-校园生活费记账工具.js data
 
 ## 内置数据
 
-本文件内置了作者本人 **8天（2026-10-15 ~ 2026-10-22）的真实消费记录**，共39笔，日均约40元。首次运行后数据会自动写入本地文件，之后记账操作会在此基础上追加。
+`raw_data/consumption_raw.csv` 包含作者本人 **8天（2026-10-15 ~ 2026-10-22）的真实消费记录**，共39笔，日均约51元。首次运行后数据会自动加载到 `data/expenses.json`，之后记账操作会在此基础上追加。
 
 ## Telemetry 日志格式
 
