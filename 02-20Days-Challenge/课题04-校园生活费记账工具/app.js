@@ -29,7 +29,7 @@
  */
 
 const { ensureDirs, loadData, logTelemetry, addExpense, batchAdd, deleteExpense, modifyExpense, listExpenses,
-  dailySummary, weeklyReport, exportCSV, showLogs, showData, SEED_LOGS } = require('./main');
+  dailySummary, weeklyReport, exportCSV, showLogs, showData, setBudget, checkBudget, trendChart, addExpenseWithDate, SEED_LOGS } = require('./main');
 const readline = require('readline');
 
 // ==================== 8位用户反馈 ====================
@@ -64,7 +64,8 @@ async function runMenu() {
     console.log('============================');
     console.log('  1. Add expense   2. Recent records   3. Daily summary');
     console.log('  4. Weekly report  5. Export CSV       6. View logs');
-    console.log('  7. Feedback       8. All data         0. Exit');
+    console.log('  7. Feedback       8. All data         9. Budget');
+    console.log('  a. Trend chart    b. Backdate add     0. Exit');
     console.log('');
     const choice = (await ask(rl, 'Enter number: ')).trim();
     if (choice === '1') {
@@ -81,6 +82,22 @@ async function runMenu() {
     else if (choice === '6') { showLogs(); }
     else if (choice === '7') { showFeedback(); }
     else if (choice === '8') { showData(); }
+    else if (choice === '9') {
+      console.log('  b: Set budget  c: Check budget');
+      const sub = (await ask(rl, 'Select: ')).trim();
+      if (sub === 'b') { const amt = (await ask(rl, 'Monthly budget (yuan): ')).trim(); setBudget(amt); }
+      else if (sub === 'c') { checkBudget(); }
+    }
+    else if (choice === 'a') { trendChart(); }
+    else if (choice === 'b') {
+      const amount = (await ask(rl, 'Amount: ')).trim();
+      console.log('Category: 1-Food 2-Transport 3-Shopping 4-Fun 5-Study 6-Medical 7-Other');
+      const catNum = (await ask(rl, 'Select number: ')).trim();
+      const note = (await ask(rl, 'Note: ')).trim();
+      const date = (await ask(rl, 'Date (YYYY-MM-DD): ')).trim();
+      const cats = { '1': '餐饮', '2': '交通', '3': '购物', '4': '娱乐', '5': '学习', '6': '医疗', '7': '其他' };
+      addExpenseWithDate(amount, cats[catNum] || '其他', note, date);
+    }
     else if (choice === '0') { console.log('Bye!'); rl.close(); process.exit(0); }
     else { console.log('Invalid input, try again'); }
   }
@@ -89,7 +106,7 @@ async function runMenu() {
 // ==================== CLI 入口 ====================
 function showHelp() {
   console.log(`
-Campus Expense Tracker v1.2
+Campus Expense Tracker v2.1
 ============================
 Usage: node app.js <command> [args]
 
@@ -98,10 +115,13 @@ Commands:
   batch <amount,cat,note|...>     Batch add expenses
   delete <id>                     Delete a record by ID
   modify <id> <amount> <cat> [note]  Modify a record
+  addbackdate <amount> <cat> <date> [note]  Backdate expense
     Categories: 餐饮 交通 购物 娱乐 学习 医疗 其他
   list [days]                     View recent N days (default 7)
   summary [date]                  Daily summary (default today)
   weekly                          Weekly report (last 7 days)
+  trend [days]                    Consumption trend chart (default 7)
+  budget [amount]                 Set/check monthly budget
   export                          Export CSV to Desktop
   logs                            View Telemetry logs
   feedback                        View 8 user feedbacks
@@ -129,6 +149,9 @@ function main() {
     case 'logs': showLogs(); break;
     case 'feedback': showFeedback(); break;
     case 'data': showData(); break;
+    case 'budget': if (args.length < 2) { checkBudget(); } else { setBudget(args[1]); } break;
+    case 'trend': trendChart(parseInt(args[1]) || 7); break;
+    case 'addbackdate': if (args.length < 5) { console.log('Usage: node app.js addbackdate <amount> <category> <date> [note]'); return; } addExpenseWithDate(args[1], args[2], args[4] || '', args[3]); break;
     case 'menu': runMenu(); break;
     case 'help': showHelp(); break;
     default: console.log(`Unknown command: ${cmd}`); showHelp();
