@@ -511,10 +511,109 @@ function addExpenseWithDate(amount, category, note, date) {
   }
 }
 
+// v2.2 新增：月度报告（赵同学反馈"最好加个月报功能，看看一个月花了多少"）
+function monthlyReport(month = null) {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    if (!month) month = new Date().toISOString().slice(0, 7);
+    const monthStart = month + '-01';
+    const monthEnd = month + '-31';
+    const monthExpenses = data.expenses.filter(e => e.date >= monthStart && e.date <= monthEnd);
+    if (monthExpenses.length === 0) { console.log(`${month} 无记录`); return; }
+    const total = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const dailyTotals = {};
+    const catTotals = {};
+    for (const e of monthExpenses) {
+      dailyTotals[e.date] = (dailyTotals[e.date] || 0) + e.amount;
+      catTotals[e.category] = (catTotals[e.category] || 0) + e.amount;
+    }
+    const days = Object.keys(dailyTotals).length;
+    const avg = total / days;
+    console.log(`\n ${month} 月度报告\n${'='.repeat(50)}`);
+    console.log(`  总支出: ${total.toFixed(2)} 元`);
+    console.log(`  消费天数: ${days} 天`);
+    console.log(`  日均消费: ${avg.toFixed(2)} 元`);
+    console.log(`  总笔数: ${monthExpenses.length} 笔`);
+    console.log(`\n  分类统计:`);
+    for (const [cat, amount] of Object.entries(catTotals).sort((a, b) => b[1] - a[1])) {
+      const pct = (amount / total * 100).toFixed(1);
+      console.log(`    ${cat.padEnd(6)} ${amount.toFixed(2).padStart(7)} 元  (${pct}%)`);
+    }
+    console.log(`\n  每日消费:`);
+    for (const [date, amount] of Object.entries(dailyTotals).sort()) {
+      const barLen = Math.round(amount / Math.max(...Object.values(dailyTotals)) * 20);
+      console.log(`    ${date} | ${'='.repeat(barLen)}${' '.repeat(20 - barLen)}| ${amount.toFixed(2)}`);
+    }
+    if (fs.existsSync(BUDGET_FILE)) {
+      const { budget } = JSON.parse(fs.readFileSync(BUDGET_FILE, 'utf-8'));
+      const remaining = budget - total;
+      console.log(`\n  预算: ${budget.toFixed(2)} 元 | 剩余: ${remaining.toFixed(2)} 元`);
+    }
+    logTelemetry('monthly_report', `month=${month}, total=${total.toFixed(2)}`, '', Date.now() - start);
+  } catch (e) { logTelemetry('monthly_report', `month=${month}`, e.message, Date.now() - start); console.log(`[ERROR] ${e.message}`); }
+}
+
+// v2.2 新增：异常消费提醒
+function checkAnomaly() {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const today = new Date().toISOString().split('T')[0];
+    const todayExpenses = data.expenses.filter(e => e.date === today);
+    const todayTotal = todayExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const weekExpenses = data.expenses.filter(e => e.date >= cutoffStr && e.date < today);
+    if (weekExpenses.length === 0) { console.log('[INFO] 无历史数据，无法判断'); return; }
+    const dailyTotals = {};
+    for (const e of weekExpenses) dailyTotals[e.date] = (dailyTotals[e.date] || 0) + e.amount;
+    const avg = Object.values(dailyTotals).reduce((a, b) => a + b, 0) / Object.keys(dailyTotals).length;
+    console.log(`\n 消费异常检测\n${'='.repeat(50)}`);
+    console.log(`  今日消费: ${todayTotal.toFixed(2)} 元`);
+    console.log(`  近7天日均: ${avg.toFixed(2)} 元`);
+    if (todayTotal > avg * 2) {
+      console.log(`\n  [ALERT] 今日消费已超日均 ${((todayTotal / avg - 1) * 100).toFixed(0)}%！`);
+      console.log(`  建议: 检查是否有大额消费，控制后续支出`);
+    } else if (todayTotal > avg * 1.5) {
+      console.log(`\n  [WARN] 今日消费偏高，请注意控制`);
+    } else {
+      console.log(`\n  [OK] 消费正常`);
+    }
+    logTelemetry('check_anomaly', `today=${todayTotal.toFixed(2)}, avg=${avg.toFixed(2)}`, '', Date.now() - start);
+  } catch (e) { logTelemetry('check_anomaly', '', e.message, Date.now() - start); console.log(`[ERROR] ${e.message}`); }
+}
+
+// v2.2 新增：数据备份（刘同学反馈"支持导入导出JSON备份"）
+function backupData() {
+  const start = Date.now();
+  try {
+    const data = loadData();
+    const backupFile = path.join(process.env.USERPROFILE, 'Desktop', `expenses_backup_${new Date().toISOString().split('T')[0]}.json`);
+    fs.writeFileSync(backupFile, JSON.stringify(data, null, 2), 'utf-8');
+    console.log(`[OK] 已备份到 ${backupFile}`);
+    console.log(`  共 ${data.expenses.length} 条记录`);
+    logTelemetry('backup', `count=${data.expenses.length}`, '', Date.now() - start);
+  } catch (e) { logTelemetry('backup', '', e.message, Date.now() - start); console.log(`[ERROR] ${e.message}`); }
+}
+
+function restoreData(backupFile) {
+  const start = Date.now();
+  try {
+    if (!fs.existsSync(backupFile)) throw new Error('备份文件不存在: ' + backupFile);
+    const backup = JSON.parse(fs.readFileSync(backupFile, 'utf-8'));
+    if (!backup.expenses || !Array.isArray(backup.expenses)) throw new Error('无效的备份文件格式');
+    saveData(backup);
+    console.log(`[OK] 已恢复 ${backup.expenses.length} 条记录`);
+    logTelemetry('restore', `count=${backup.expenses.length}`, '', Date.now() - start);
+  } catch (e) { logTelemetry('restore', '', e.message, Date.now() - start); console.log(`[ERROR] ${e.message}`); }
+}
+
 module.exports = {
   ensureDirs, loadData, saveData, logTelemetry,
   addExpense, batchAdd, deleteExpense, modifyExpense,
   listExpenses, dailySummary, weeklyReport, exportCSV,
   showLogs, showData, setBudget, checkBudget, trendChart, addExpenseWithDate,
+  monthlyReport, checkAnomaly, backupData, restoreData,
   SEED_LOGS, CATEGORIES
 };

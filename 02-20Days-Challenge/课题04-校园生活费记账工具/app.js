@@ -29,7 +29,8 @@
  */
 
 const { ensureDirs, loadData, logTelemetry, addExpense, batchAdd, deleteExpense, modifyExpense, listExpenses,
-  dailySummary, weeklyReport, exportCSV, showLogs, showData, setBudget, checkBudget, trendChart, addExpenseWithDate, SEED_LOGS } = require('./main');
+  dailySummary, weeklyReport, exportCSV, showLogs, showData, setBudget, checkBudget, trendChart, addExpenseWithDate,
+  monthlyReport, checkAnomaly, backupData, restoreData, SEED_LOGS } = require('./main');
 const readline = require('readline');
 
 // ==================== 8位用户反馈 ====================
@@ -106,7 +107,7 @@ async function runMenu() {
 // ==================== CLI 入口 ====================
 function showHelp() {
   console.log(`
-Campus Expense Tracker v2.1
+Campus Expense Tracker v2.2
 ============================
 Usage: node app.js <command> [args]
 
@@ -120,8 +121,12 @@ Commands:
   list [days]                     View recent N days (default 7)
   summary [date]                  Daily summary (default today)
   weekly                          Weekly report (last 7 days)
+  monthly [YYYY-MM]               Monthly report (default current month)
   trend [days]                    Consumption trend chart (default 7)
   budget [amount]                 Set/check monthly budget
+  anomaly                         Check if today's spending is abnormal
+  backup                          Backup data to Desktop (JSON)
+  restore <file.json>             Restore data from backup file
   export                          Export CSV to Desktop
   logs                            View Telemetry logs
   feedback                        View 8 user feedbacks
@@ -152,6 +157,10 @@ function main() {
     case 'budget': if (args.length < 2) { checkBudget(); } else { setBudget(args[1]); } break;
     case 'trend': trendChart(parseInt(args[1]) || 7); break;
     case 'addbackdate': if (args.length < 5) { console.log('Usage: node app.js addbackdate <amount> <category> <date> [note]'); return; } addExpenseWithDate(args[1], args[2], args[4] || '', args[3]); break;
+    case 'monthly': monthlyReport(args[1] || null); break;
+    case 'anomaly': checkAnomaly(); break;
+    case 'backup': backupData(); break;
+    case 'restore': if (args.length < 2) { console.log('Usage: node app.js restore <backup_file.json>'); return; } restoreData(args[1]); break;
     case 'menu': runMenu(); break;
     case 'help': showHelp(); break;
     default: console.log(`Unknown command: ${cmd}`); showHelp();
