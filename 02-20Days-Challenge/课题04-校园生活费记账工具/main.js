@@ -206,7 +206,13 @@ function ensureDirs() {
 
 function loadData() {
   if (fs.existsSync(DATA_FILE)) {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+    try {
+      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+    } catch (e) {
+      console.log('[WARN] 数据文件损坏，已自动备份并重新初始化');
+      const backupFile = DATA_FILE + '.corrupted.' + Date.now();
+      fs.renameSync(DATA_FILE, backupFile);
+    }
   }
   const expenses = [];
   let id = 1;
