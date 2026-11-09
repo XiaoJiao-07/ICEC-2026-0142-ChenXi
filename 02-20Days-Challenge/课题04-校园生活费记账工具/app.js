@@ -29,7 +29,7 @@
  */
 
 const { ensureDirs, loadData, logTelemetry, addExpense, batchAdd, deleteExpense, modifyExpense, listExpenses,
-  dailySummary, weeklyReport, exportCSV, showLogs, showData, SEED_LOGS } = require('./main');
+  dailySummary, weeklyReport, exportCSV, showLogs, showData } = require('./main');
 const readline = require('readline');
 
 // ==================== 8位用户反馈 ====================

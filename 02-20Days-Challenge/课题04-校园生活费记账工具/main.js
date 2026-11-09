@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { record, verifyAll } = require('./src/telemetry');
 
 const BASE_DIR = __dirname;
 const DATA_DIR = path.join(BASE_DIR, 'data');
@@ -17,185 +18,9 @@ const DATA_FILE = path.join(DATA_DIR, 'expenses.json');
 const CATEGORIES = ['餐饮', '交通', '购物', '娱乐', '学习', '医疗', '其他'];
 const callCount = {};
 
-// ==================== 8天真实消费数据 ====================
-const SEED_DATA = [
-  { date: '2026-10-15', items: [
-    { amount: 3, category: '餐饮', note: '早餐', time: '07:30' },
-    { amount: 13, category: '餐饮', note: '午餐', time: '12:00' },
-    { amount: 5, category: '餐饮', note: '买水', time: '14:00' },
-    { amount: 15, category: '餐饮', note: '晚餐', time: '18:00' },
-    { amount: 6.95, category: '购物', note: '购物', time: '20:00' },
-  ]},
-  { date: '2026-10-16', items: [
-    { amount: 3, category: '餐饮', note: '早餐', time: '07:30' },
-    { amount: 12, category: '餐饮', note: '午餐', time: '12:00' },
-    { amount: 15, category: '餐饮', note: '晚餐', time: '18:00' },
-    { amount: 2, category: '餐饮', note: '买水', time: '15:00' },
-  ]},
-  { date: '2026-10-17', items: [
-    { amount: 6, category: '餐饮', note: '早餐', time: '07:30' },
-    { amount: 14, category: '餐饮', note: '午餐', time: '12:00' },
-    { amount: 12, category: '餐饮', note: '晚餐', time: '18:00' },
-    { amount: 2, category: '餐饮', note: '买水', time: '14:00' },
-    { amount: 36.2, category: '购物', note: '购物', time: '20:00' },
-  ]},
-  { date: '2026-10-18', items: [
-    { amount: 3, category: '餐饮', note: '早餐', time: '07:30' },
-    { amount: 2, category: '餐饮', note: '买水', time: '10:00' },
-    { amount: 10.58, category: '餐饮', note: '午餐', time: '12:00' },
-    { amount: 12, category: '餐饮', note: '晚餐', time: '18:00' },
-    { amount: 3, category: '购物', note: '洗衣服', time: '19:00' },
-    { amount: 30, category: '其他', note: '话费', time: '20:00' },
-  ]},
-  { date: '2026-10-19', items: [
-    { amount: 3, category: '餐饮', note: '早餐', time: '07:30' },
-    { amount: 15, category: '餐饮', note: '午餐', time: '12:00' },
-    { amount: 17.85, category: '餐饮', note: '晚餐', time: '18:00' },
-    { amount: 2, category: '餐饮', note: '买水', time: '15:00' },
-  ]},
-  { date: '2026-10-20', items: [
-    { amount: 2, category: '餐饮', note: '买水', time: '10:00' },
-    { amount: 3, category: '餐饮', note: '早餐', time: '07:30' },
-    { amount: 12, category: '餐饮', note: '午餐', time: '12:00' },
-    { amount: 13, category: '餐饮', note: '晚餐', time: '18:00' },
-    { amount: 4, category: '餐饮', note: '奶茶', time: '20:00' },
-  ]},
-  { date: '2026-10-21', items: [
-    { amount: 3, category: '餐饮', note: '早餐', time: '07:30' },
-    { amount: 13, category: '餐饮', note: '午餐', time: '12:00' },
-    { amount: 15, category: '餐饮', note: '晚餐', time: '18:00' },
-    { amount: 34, category: '餐饮', note: '夜宵', time: '22:00' },
-    { amount: 35, category: '其他', note: '剪头发', time: '16:00' },
-    { amount: 5, category: '餐饮', note: '买水', time: '14:00' },
-  ]},
-  { date: '2026-10-22', items: [
-    { amount: 3, category: '餐饮', note: '早餐', time: '07:30' },
-    { amount: 12, category: '餐饮', note: '午餐', time: '12:00' },
-    { amount: 13, category: '餐饮', note: '晚餐', time: '18:00' },
-    { amount: 2, category: '餐饮', note: '买水', time: '15:00' },
-  ]},
-];
-
-// ==================== 8天 Telemetry 运行日志 ====================
-const SEED_LOGS = {
-  '2026-10-15': [
-    { timestamp: '2026-10-15 07:30:00', action: 'startup', details: 'args=add', elapsed_ms: 1, call_count: 1, error: '' },
-    { timestamp: '2026-10-15 07:30:00', action: 'startup', details: 'args=add,3,餐饮', elapsed_ms: 1, call_count: 2, error: '' },
-    { timestamp: '2026-10-15 07:30:01', action: 'add', details: 'amount=3, category=餐饮', elapsed_ms: 5, call_count: 3, error: '' },
-    { timestamp: '2026-10-15 12:00:00', action: 'startup', details: 'args=add,13,餐饮', elapsed_ms: 1, call_count: 4, error: '' },
-    { timestamp: '2026-10-15 12:00:01', action: 'add', details: 'amount=13, category=餐饮', elapsed_ms: 4, call_count: 5, error: '' },
-    { timestamp: '2026-10-15 14:00:00', action: 'startup', details: 'args=add,5,餐饮', elapsed_ms: 1, call_count: 6, error: '' },
-    { timestamp: '2026-10-15 14:00:01', action: 'add', details: 'amount=5, category=餐饮', elapsed_ms: 1, call_count: 7, error: '' },
-    { timestamp: '2026-10-15 18:00:00', action: 'startup', details: 'args=add,15,餐饮', elapsed_ms: 1, call_count: 8, error: '' },
-    { timestamp: '2026-10-15 18:00:01', action: 'add', details: 'amount=15, category=餐饮', elapsed_ms: 4, call_count: 9, error: '' },
-    { timestamp: '2026-10-15 20:00:00', action: 'startup', details: 'args=add,6.95,购物', elapsed_ms: 1, call_count: 10, error: '' },
-    { timestamp: '2026-10-15 20:00:01', action: 'add', details: 'amount=6.95, category=购物', elapsed_ms: 4, call_count: 11, error: '' },
-    { timestamp: '2026-10-15 22:30:00', action: 'startup', details: 'args=summary', elapsed_ms: 1, call_count: 12, error: '' },
-    { timestamp: '2026-10-15 22:30:01', action: 'summary', details: 'date=2026-10-15', elapsed_ms: 7, call_count: 13, error: '' },
-  ],
-  '2026-10-16': [
-    { timestamp: '2026-10-16 07:30:00', action: 'startup', details: 'args=add', elapsed_ms: 1, call_count: 1, error: '' },
-    { timestamp: '2026-10-16 07:30:00', action: 'startup', details: 'args=add,3,餐饮', elapsed_ms: 1, call_count: 2, error: '' },
-    { timestamp: '2026-10-16 07:30:01', action: 'add', details: 'amount=3, category=餐饮', elapsed_ms: 4, call_count: 3, error: '' },
-    { timestamp: '2026-10-16 12:00:00', action: 'startup', details: 'args=add,12,餐饮', elapsed_ms: 1, call_count: 4, error: '' },
-    { timestamp: '2026-10-16 12:00:01', action: 'add', details: 'amount=12, category=餐饮', elapsed_ms: 2, call_count: 5, error: '' },
-    { timestamp: '2026-10-16 15:00:00', action: 'startup', details: 'args=add,2,餐饮', elapsed_ms: 1, call_count: 6, error: '' },
-    { timestamp: '2026-10-16 15:00:01', action: 'add', details: 'amount=2, category=餐饮', elapsed_ms: 3, call_count: 7, error: '' },
-    { timestamp: '2026-10-16 18:00:00', action: 'startup', details: 'args=add,15,餐饮', elapsed_ms: 1, call_count: 8, error: '' },
-    { timestamp: '2026-10-16 18:00:01', action: 'add', details: 'amount=15, category=餐饮', elapsed_ms: 1, call_count: 9, error: '' },
-    { timestamp: '2026-10-16 22:30:00', action: 'startup', details: 'args=summary', elapsed_ms: 1, call_count: 10, error: '' },
-    { timestamp: '2026-10-16 22:30:01', action: 'summary', details: 'date=2026-10-16', elapsed_ms: 6, call_count: 11, error: '' },
-  ],
-  '2026-10-17': [
-    { timestamp: '2026-10-17 07:30:00', action: 'startup', details: 'args=add', elapsed_ms: 1, call_count: 1, error: '' },
-    { timestamp: '2026-10-17 07:30:00', action: 'startup', details: 'args=add,6,餐饮', elapsed_ms: 1, call_count: 2, error: '' },
-    { timestamp: '2026-10-17 07:30:01', action: 'add', details: 'amount=6, category=餐饮', elapsed_ms: 1, call_count: 3, error: '' },
-    { timestamp: '2026-10-17 12:00:00', action: 'startup', details: 'args=add,14,餐饮', elapsed_ms: 1, call_count: 4, error: '' },
-    { timestamp: '2026-10-17 12:00:01', action: 'add', details: 'amount=14, category=餐饮', elapsed_ms: 5, call_count: 5, error: '' },
-    { timestamp: '2026-10-17 14:00:00', action: 'startup', details: 'args=add,2,餐饮', elapsed_ms: 1, call_count: 6, error: '' },
-    { timestamp: '2026-10-17 14:00:01', action: 'add', details: 'amount=2, category=餐饮', elapsed_ms: 5, call_count: 7, error: '' },
-    { timestamp: '2026-10-17 18:00:00', action: 'startup', details: 'args=add,12,餐饮', elapsed_ms: 1, call_count: 8, error: '' },
-    { timestamp: '2026-10-17 18:00:01', action: 'add', details: 'amount=12, category=餐饮', elapsed_ms: 3, call_count: 9, error: '' },
-    { timestamp: '2026-10-17 20:00:00', action: 'startup', details: 'args=add,36.2,购物', elapsed_ms: 1, call_count: 10, error: '' },
-    { timestamp: '2026-10-17 20:00:01', action: 'add', details: 'amount=36.2, category=购物', elapsed_ms: 2, call_count: 11, error: '' },
-    { timestamp: '2026-10-17 22:30:00', action: 'startup', details: 'args=summary', elapsed_ms: 1, call_count: 12, error: '' },
-    { timestamp: '2026-10-17 22:30:01', action: 'summary', details: 'date=2026-10-17', elapsed_ms: 12, call_count: 13, error: '' },
-  ],
-  '2026-10-18': [
-    { timestamp: '2026-10-18 07:30:00', action: 'startup', details: 'args=add', elapsed_ms: 1, call_count: 1, error: '' },
-    { timestamp: '2026-10-18 07:30:00', action: 'startup', details: 'args=add,3,餐饮', elapsed_ms: 1, call_count: 2, error: '' },
-    { timestamp: '2026-10-18 07:30:01', action: 'add', details: 'amount=3, category=餐饮', elapsed_ms: 1, call_count: 3, error: '' },
-    { timestamp: '2026-10-18 10:00:00', action: 'startup', details: 'args=add,2,餐饮', elapsed_ms: 1, call_count: 4, error: '' },
-    { timestamp: '2026-10-18 10:00:01', action: 'add', details: 'amount=2, category=餐饮', elapsed_ms: 1, call_count: 5, error: '' },
-    { timestamp: '2026-10-18 12:00:00', action: 'startup', details: 'args=add,10.58,餐饮', elapsed_ms: 1, call_count: 6, error: '' },
-    { timestamp: '2026-10-18 12:00:01', action: 'add', details: 'amount=10.58, category=餐饮', elapsed_ms: 3, call_count: 7, error: '' },
-    { timestamp: '2026-10-18 18:00:00', action: 'startup', details: 'args=add,12,餐饮', elapsed_ms: 1, call_count: 8, error: '' },
-    { timestamp: '2026-10-18 18:00:01', action: 'add', details: 'amount=12, category=餐饮', elapsed_ms: 1, call_count: 9, error: '' },
-    { timestamp: '2026-10-18 19:00:00', action: 'startup', details: 'args=add,3,购物', elapsed_ms: 1, call_count: 10, error: '' },
-    { timestamp: '2026-10-18 19:00:01', action: 'add', details: 'amount=3, category=购物', elapsed_ms: 3, call_count: 11, error: '' },
-    { timestamp: '2026-10-18 20:00:00', action: 'startup', details: 'args=add,30,其他', elapsed_ms: 1, call_count: 12, error: '' },
-    { timestamp: '2026-10-18 20:00:01', action: 'add', details: 'amount=30, category=其他', elapsed_ms: 4, call_count: 13, error: '' },
-    { timestamp: '2026-10-18 22:30:00', action: 'startup', details: 'args=summary', elapsed_ms: 1, call_count: 14, error: '' },
-    { timestamp: '2026-10-18 22:30:01', action: 'summary', details: 'date=2026-10-18', elapsed_ms: 8, call_count: 15, error: '' },
-  ],
-  '2026-10-19': [
-    { timestamp: '2026-10-19 07:30:00', action: 'startup', details: 'args=add', elapsed_ms: 1, call_count: 1, error: '' },
-    { timestamp: '2026-10-19 07:30:00', action: 'startup', details: 'args=add,3,餐饮', elapsed_ms: 1, call_count: 2, error: '' },
-    { timestamp: '2026-10-19 07:30:01', action: 'add', details: 'amount=3, category=餐饮', elapsed_ms: 5, call_count: 3, error: '' },
-    { timestamp: '2026-10-19 12:00:00', action: 'startup', details: 'args=add,15,餐饮', elapsed_ms: 1, call_count: 4, error: '' },
-    { timestamp: '2026-10-19 12:00:01', action: 'add', details: 'amount=15, category=餐饮', elapsed_ms: 2, call_count: 5, error: '' },
-    { timestamp: '2026-10-19 15:00:00', action: 'startup', details: 'args=add,2,餐饮', elapsed_ms: 1, call_count: 6, error: '' },
-    { timestamp: '2026-10-19 15:00:01', action: 'add', details: 'amount=2, category=餐饮', elapsed_ms: 1, call_count: 7, error: '' },
-    { timestamp: '2026-10-19 18:00:00', action: 'startup', details: 'args=add,17.85,餐饮', elapsed_ms: 1, call_count: 8, error: '' },
-    { timestamp: '2026-10-19 18:00:01', action: 'add', details: 'amount=17.85, category=餐饮', elapsed_ms: 5, call_count: 9, error: '' },
-    { timestamp: '2026-10-19 22:30:00', action: 'startup', details: 'args=summary', elapsed_ms: 1, call_count: 10, error: '' },
-    { timestamp: '2026-10-19 22:30:01', action: 'summary', details: 'date=2026-10-19', elapsed_ms: 3, call_count: 11, error: '' },
-  ],
-  '2026-10-20': [
-    { timestamp: '2026-10-20 07:30:00', action: 'startup', details: 'args=add,3,餐饮', elapsed_ms: 1, call_count: 1, error: '' },
-    { timestamp: '2026-10-20 07:30:01', action: 'add', details: 'amount=3, category=餐饮', elapsed_ms: 5, call_count: 2, error: '' },
-    { timestamp: '2026-10-20 10:00:00', action: 'startup', details: 'args=add,2,餐饮', elapsed_ms: 1, call_count: 3, error: '' },
-    { timestamp: '2026-10-20 10:00:01', action: 'add', details: 'amount=2, category=餐饮', elapsed_ms: 2, call_count: 4, error: '' },
-    { timestamp: '2026-10-20 12:00:00', action: 'startup', details: 'args=add,12,餐饮', elapsed_ms: 1, call_count: 5, error: '' },
-    { timestamp: '2026-10-20 12:00:01', action: 'add', details: 'amount=12, category=餐饮', elapsed_ms: 4, call_count: 6, error: '' },
-    { timestamp: '2026-10-20 18:00:00', action: 'startup', details: 'args=add,13,餐饮', elapsed_ms: 1, call_count: 7, error: '' },
-    { timestamp: '2026-10-20 18:00:01', action: 'add', details: 'amount=13, category=餐饮', elapsed_ms: 4, call_count: 8, error: '' },
-    { timestamp: '2026-10-20 20:00:00', action: 'startup', details: 'args=add,4,餐饮', elapsed_ms: 1, call_count: 9, error: '' },
-    { timestamp: '2026-10-20 20:00:01', action: 'add', details: 'amount=4, category=餐饮', elapsed_ms: 4, call_count: 10, error: '' },
-    { timestamp: '2026-10-20 22:30:00', action: 'startup', details: 'args=summary', elapsed_ms: 1, call_count: 11, error: '' },
-    { timestamp: '2026-10-20 22:30:01', action: 'summary', details: 'date=2026-10-20', elapsed_ms: 3, call_count: 12, error: '' },
-  ],
-  '2026-10-21': [
-    { timestamp: '2026-10-21 07:30:00', action: 'startup', details: 'args=add', elapsed_ms: 1, call_count: 1, error: '' },
-    { timestamp: '2026-10-21 07:30:00', action: 'startup', details: 'args=add,3,餐饮', elapsed_ms: 1, call_count: 2, error: '' },
-    { timestamp: '2026-10-21 07:30:01', action: 'add', details: 'amount=3, category=餐饮', elapsed_ms: 2, call_count: 3, error: '' },
-    { timestamp: '2026-10-21 12:00:00', action: 'startup', details: 'args=add,13,餐饮', elapsed_ms: 1, call_count: 4, error: '' },
-    { timestamp: '2026-10-21 12:00:01', action: 'add', details: 'amount=13, category=餐饮', elapsed_ms: 5, call_count: 5, error: '' },
-    { timestamp: '2026-10-21 14:00:00', action: 'startup', details: 'args=add,5,餐饮', elapsed_ms: 1, call_count: 6, error: '' },
-    { timestamp: '2026-10-21 14:00:01', action: 'add', details: 'amount=5, category=餐饮', elapsed_ms: 5, call_count: 7, error: '' },
-    { timestamp: '2026-10-21 16:00:00', action: 'startup', details: 'args=add,35,其他', elapsed_ms: 1, call_count: 8, error: '' },
-    { timestamp: '2026-10-21 16:00:01', action: 'add', details: 'amount=35, category=其他', elapsed_ms: 5, call_count: 9, error: '' },
-    { timestamp: '2026-10-21 18:00:00', action: 'startup', details: 'args=add,15,餐饮', elapsed_ms: 1, call_count: 10, error: '' },
-    { timestamp: '2026-10-21 18:00:01', action: 'add', details: 'amount=15, category=餐饮', elapsed_ms: 1, call_count: 11, error: '' },
-    { timestamp: '2026-10-21 22:00:00', action: 'startup', details: 'args=add,34,餐饮', elapsed_ms: 1, call_count: 12, error: '' },
-    { timestamp: '2026-10-21 22:00:01', action: 'add', details: 'amount=34, category=餐饮', elapsed_ms: 2, call_count: 13, error: '' },
-    { timestamp: '2026-10-21 22:30:00', action: 'startup', details: 'args=summary', elapsed_ms: 1, call_count: 14, error: '' },
-    { timestamp: '2026-10-21 22:30:01', action: 'summary', details: 'date=2026-10-21', elapsed_ms: 12, call_count: 15, error: '' },
-  ],
-  '2026-10-22': [
-    { timestamp: '2026-10-22 07:30:00', action: 'startup', details: 'args=add', elapsed_ms: 1, call_count: 1, error: '' },
-    { timestamp: '2026-10-22 07:30:00', action: 'startup', details: 'args=add,3,餐饮', elapsed_ms: 1, call_count: 2, error: '' },
-    { timestamp: '2026-10-22 07:30:01', action: 'add', details: 'amount=3, category=餐饮', elapsed_ms: 1, call_count: 3, error: '' },
-    { timestamp: '2026-10-22 12:00:00', action: 'startup', details: 'args=add,12,餐饮', elapsed_ms: 1, call_count: 4, error: '' },
-    { timestamp: '2026-10-22 12:00:01', action: 'add', details: 'amount=12, category=餐饮', elapsed_ms: 3, call_count: 5, error: '' },
-    { timestamp: '2026-10-22 15:00:00', action: 'startup', details: 'args=add,2,餐饮', elapsed_ms: 1, call_count: 6, error: '' },
-    { timestamp: '2026-10-22 15:00:01', action: 'add', details: 'amount=2, category=餐饮', elapsed_ms: 1, call_count: 7, error: '' },
-    { timestamp: '2026-10-22 18:00:00', action: 'startup', details: 'args=add,13,餐饮', elapsed_ms: 1, call_count: 8, error: '' },
-    { timestamp: '2026-10-22 18:00:01', action: 'add', details: 'amount=13, category=餐饮', elapsed_ms: 1, call_count: 9, error: '' },
-    { timestamp: '2026-10-22 22:30:00', action: 'startup', details: 'args=summary', elapsed_ms: 1, call_count: 10, error: '' },
-    { timestamp: '2026-10-22 22:30:01', action: 'summary', details: 'date=2026-10-22', elapsed_ms: 8, call_count: 11, error: '' },
-  ],
-};
+// 2026-11-09 改造：内置消费数组（本人真实消费）已迁移到 raw_data/baseline_2026-10.csv；
+// 预置日志常量已移除，旧日志文件原样保留，性质见仓库根 CORRECTION.md。
+// 此后日志一律由 src/telemetry.js 在运行时 append-only 追加。
 
 // ==================== 基础函数 ====================
 function ensureDirs() {
@@ -204,23 +29,9 @@ function ensureDirs() {
 }
 
 function loadData() {
-  if (fs.existsSync(DATA_FILE)) {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-  }
-  const expenses = [];
-  let id = 1;
-  for (const day of SEED_DATA) {
-    for (const item of day.items) {
-      expenses.push({ id: id++, amount: item.amount, category: item.category, note: item.note, date: day.date, created_at: day.date + ' ' + item.time + ':00' });
-    }
-  }
-  const data = { expenses, version: 1 };
-  saveData(data);
-  for (const [date, entries] of Object.entries(SEED_LOGS)) {
-    const logFile = path.join(LOG_DIR, `telemetry_${date}.log`);
-    fs.writeFileSync(logFile, entries.map(e => JSON.stringify(e)).join('\n') + '\n', 'utf-8');
-  }
-  return data;
+  ensureDirs();
+  if (!fs.existsSync(DATA_FILE)) return { expenses: [], version: 1 };
+  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
 }
 
 function saveData(data) {
@@ -228,12 +39,7 @@ function saveData(data) {
 }
 
 function logTelemetry(action, details = '', error = '', elapsed = 0) {
-  ensureDirs();
-  const today = new Date().toISOString().split('T')[0];
-  const logFile = path.join(LOG_DIR, `telemetry_${today}.log`);
-  callCount[action] = (callCount[action] || 0) + 1;
-  const entry = { timestamp: new Date().toLocaleString('zh-CN', { hour12: false }), action, details, elapsed_ms: elapsed, call_count: callCount[action], error };
-  fs.appendFileSync(logFile, JSON.stringify(entry) + '\n', 'utf-8');
+  return record(action, details, { elapsed_ms: elapsed, error: error });
 }
 
 // ==================== 核心功能 ====================
@@ -399,14 +205,11 @@ function exportCSV() {
 }
 
 function showLogs() {
-  console.log('\n Telemetry 运行日志（8天）\n' + '='.repeat(50));
-  for (const [date, entries] of Object.entries(SEED_LOGS)) {
-    console.log(`\n【${date}】共 ${entries.length} 条记录`);
-    for (const e of entries) {
-      const errTag = e.error ? ` [ERROR: ${e.error}]` : '';
-      console.log(`  ${e.timestamp} | ${e.action.padEnd(14)} | 耗时${String(e.elapsed_ms).padStart(3)}ms | 第${e.call_count}次调用${errTag}`);
-    }
-  }
+  const r = verifyAll();
+  console.log('\n Telemetry 哈希链状态: ' + (r.ok ? '[PASS]' : '[FAIL]') + '\n' + '='.repeat(50));
+  console.log('链起始日: ' + r.chainStart + ' | 日志目录: ' + r.logDir);
+  r.daily.forEach(d => console.log('  ' + d.date + '  ' + d.lines + ' 条  head=' + String(d.head || '').slice(0, 12)));
+  if (!r.ok) r.problems.forEach(p => console.log('  [!] ' + p));
 }
 
 function showData() {
@@ -424,5 +227,5 @@ module.exports = {
   ensureDirs, loadData, saveData, logTelemetry,
   addExpense, batchAdd, deleteExpense, modifyExpense,
   listExpenses, dailySummary, weeklyReport, exportCSV,
-  showLogs, showData, SEED_LOGS, CATEGORIES
+  showLogs, showData, CATEGORIES
 };
