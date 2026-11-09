@@ -22,16 +22,22 @@
 ├── app.js           ← 交互菜单 + CLI入口
 ├── 记账.bat         ← 桌面快捷方式（双击启动）
 ├── user_feedback.md ← 8位用户反馈
-├── raw_data/        ← 原始消费数据表
-│   └── consumption_raw.csv
-├── process_logs/    ← 8天Telemetry运行日志（已上传）
-│   ├── telemetry_2026-10-15.log
-│   ├── telemetry_2026-10-16.log
-│   ── ... (共8天)
+├── src/
+│   ├── telemetry.js      ← append-only 遥测写入 + SHA-256 哈希链
+│   ├── verify_chain.js   ← 哈希链校验（改动任意一行即报错）
+│   └── selfcheck.js      ← 每日提交自查
+├── raw_data/
+│   ├── baseline_2026-10.csv  ← 作者 10-15~10-22 真实消费（事后汇总基线）
+│   └── consumption_raw.csv   ← 同源早期导出
+├── process_logs/
+│   ├── log_2026-10-15.json ~ log_2026-10-22.json  ← 早期材料，非运行产物，不作为证据
+│   └── telemetry_2026-11-09.log 起                 ← 运行时逐条追加，带哈希链
 ├── data/            ← 消费数据（本地存储，不上传）
 │   └── expenses.json
 └── README.md
 ```
+
+> ⚠️ 关于 `process_logs/` 里两类文件的性质区别，以及为什么早期那 8 个 JSON 不能算过程证据，见仓库根目录 [`CORRECTION.md`](../../CORRECTION.md)。
 
 ## 功能列表
 
@@ -131,31 +137,47 @@ node app.js data
 | 6 | 医疗 |
 | 7 | 其他 |
 
-## 内置数据
+## 消费数据（基线）
 
-内置了作者本人 **8天（2026-10-15 ~ 2026-10-22）的真实消费记录**，共39笔，日均约40元。首次运行后数据会自动写入 `data/expenses.json`，之后记账操作会在此基础上追加。
+作者本人 **8 天（2026-10-15 ~ 2026-10-22）的真实消费记录**共 39 笔，日均约 40 元，存放在 `raw_data/baseline_2026-10.csv`。
+
+**说明**：这批数据内容真实，但当时是以源码内置数组形式一次性纳入的（10-22 汇总录入），不是逐日录入，因此**仅作为个人消费基线，不计入"运行时日志"评分项**。2026-11-09 起已从源码中移除，改为独立 CSV；新的记账数据由程序运行时逐笔写入 `data/expenses.json`，与基线分开。
 
 ## Telemetry 日志格式
 
-每条日志包含以下字段：
+每条日志为一行 JSON（JSONL），字段如下：
 
 ```json
 {
-  "timestamp": "2026/10/15 07:31:25",
+  "seq": 3,
+  "ts": "2026-11-09 19:17:42.318",
+  "ts_utc": "2026-11-09T11:17:42.318Z",
+  "date": "2026-11-09",
   "action": "add",
-  "details": "amount=3, category=餐饮",
-  "elapsed_ms": 2,
-  "call_count": 1,
-  "error": ""
+  "details": { "amount": 13, "category": "餐饮" },
+  "elapsed_ms": 5,
+  "error": "",
+  "prev_hash": "a3f1...",
+  "hash": "9c02..."
 }
 ```
 
-- `timestamp`：操作时间
-- `action`：操作类型（add/batch_add/delete/modify/list/summary/weekly_report/export_csv）
-- `details`：操作参数详情
+- `seq`：当日序号，从 1 开始，必须连续
+- `ts` / `ts_utc`：系统真实时间（本地时区含毫秒 / UTC）
+- `action`：操作类型（startup/add/batch_add/delete/modify/list/summary/weekly_report/monthly/trend/budget/export_csv 等）
 - `elapsed_ms`：执行耗时（毫秒）
-- `call_count`：该操作累计调用次数
 - `error`：错误信息（无错误为空字符串）
+- `prev_hash`：前一条记录的 SHA-256（当日首条为 `GENESIS`，跨日不断链）
+- `hash`：本条记录内容的 SHA-256
+
+**写入方式**：仅 `appendFileSync(path, line, { flag: 'a' })` 追加，全流程无 `writeFileSync` 覆盖日志。任一行的任一字段被改动，`hash` 立即不匹配，且后续所有行的 `prev_hash` 全部断裂。
+
+**校验方式**：
+
+```bash
+node src/verify_chain.js    # 输出 [PASS] 并打印链头；异常时打印具体行号与原因
+node src/selfcheck.js       # 每日提交前自查：日志存在/时间戳真实/链完整/当日已提交/commit 锚定链头
+```
 
 ## 用户反馈摘要
 
@@ -170,9 +192,15 @@ node app.js data
 
 | 版本 | 日期 | 变更内容 | 依据 |
 |------|------|----------|------|
-| v1.0 | 2026-10-22 | 重构为多文件结构，补充 process_logs 和 raw_data | 防脱敏要求 |
-| v1.1 | 2026-10-22 | 新增批量记账功能 | 日志分析：用户每天多次调用add；王同学反馈"每天吃饭都要记太麻烦" |
+| v1.0 | 2026-10-22 | 重构为多文件结构，补充 process_logs 和 raw_data | 拆分需求 |
+| v1.1 | 2026-10-22 | 新增批量记账功能 | 王同学反馈"每天吃饭都要记太麻烦" |
 | v1.2 | 2026-10-22 | 新增删除和修改记录功能 | 陈同学反馈"记错了想删掉或者修改，发现没有这个功能" |
-| v2.0 | 2026-10-22 | 新增预算提醒、消费趋势图、补记功能 | 张同学反馈"加个预算上限提醒"；孙同学反馈"加个数据可视化"；周同学反馈"补记时能手动选日期" |
+| v2.0 | 2026-10-28 | 新增预算提醒、消费趋势图、补记功能 | 张同学"预算上限提醒"、孙同学"数据可视化"、周同学"补记时能选日期" |
+| v2.1 | 2026-10-28 | 补充 8 位用户反馈记录、更新 README | 文档完善 |
+| v2.2 | 2026-10-28 | 新增月度报告、异常消费提醒、数据备份恢复 | 赵同学"加个月报看看一个月花多少"、刘同学"支持JSON备份" |
+| v2.3 | 2026-10-28 | 修复数据文件损坏时程序崩溃 | 自测发现的健壮性问题 |
+| D0 | 2026-11-09 | 移除 SEED_LOGS/SEED_DATA，接入 append-only 哈希链遥测，补齐目录结构 | 见仓库根 `CORRECTION.md` |
+
+> **关于 v1.0~v1.2 的说明**：这三次提交集中在 2026-10-22 上午的几分钟内完成，属于"补出三次提交"而非"跨日、由运行数据驱动"的迭代。按考核原文要求（3+ **data-driven** iterations），它们**不构成有效迭代**。2026-11-09 起的迭代记录见 `../../02-20Days-Challenge/iterations/`，按「日志证据 → 可证伪假设 → diff → 次日验证」四段格式，一个迭代一份。
 
 [查看完整提交历史](https://github.com/XiaoJiao-07/ICEC-2026-0142-ChenXi/commits/main/02-20Days-Challenge)
