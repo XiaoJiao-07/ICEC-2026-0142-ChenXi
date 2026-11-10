@@ -12,6 +12,11 @@ const t = require('./telemetry');
 const today = t.localDate();
 const file = path.join(t.LOG_DIR, 'telemetry_' + today + '.log');
 const results = [];
+// git 命令固定在本文件所在的项目目录下执行：
+// 否则从别的目录（如桌面、或上层工作区）调用时，git 找不到仓库，
+// 会把「今天有 commit」误判为没提交。
+const PROJ_DIR = path.resolve(__dirname, '..');
+const GIT_OPTS = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], cwd: PROJ_DIR };
 
 function chk(name, ok, hint) { results.push({ name: name, ok: ok, hint: hint || '' }); }
 
@@ -47,8 +52,7 @@ chk('哈希链完整无篡改', v.ok, v.problems.slice(0, 3).join(' / '));
 // 5. 今日 commit
 let commits = '';
 try {
-  commits = cp.execFileSync('git', ['log', '--since=' + today + ' 00:00', '--pretty=%h %s'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  commits = cp.execFileSync('git', ['log', '--since=' + today + ' 00:00', '--pretty=%h %s'], GIT_OPTS).trim();
 } catch (e) { commits = ''; }
 const hasCommit = commits.length > 0;
 chk('今天已有 git commit', hasCommit, '没有当天提交 = 又回到「一次性补交」的老问题。');
@@ -56,8 +60,7 @@ chk('今天已有 git commit', hasCommit, '没有当天提交 = 又回到「一�
 // 6. commit message 锚定链头
 let lastMsg = '';
 try {
-  lastMsg = cp.execFileSync('git', ['log', '-1', '--pretty=%B'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  lastMsg = cp.execFileSync('git', ['log', '-1', '--pretty=%B'], GIT_OPTS).trim();
 } catch (e) { lastMsg = ''; }
 const head8 = v.head.slice(0, 8);
 const anchored = v.head !== 'GENESIS' && lastMsg.indexOf(head8) >= 0;
