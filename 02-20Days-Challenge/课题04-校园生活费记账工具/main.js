@@ -32,12 +32,19 @@ function ensureDirs() {
 function loadData() {
   ensureDirs();
   if (fs.existsSync(DATA_FILE)) {
+    let data = null;
     try {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+      data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
     } catch (e) {
       console.log('[WARN] 数据文件损坏，已自动备份并重新初始化');
       const backupFile = DATA_FILE + '.corrupted.' + Date.now();
       fs.renameSync(DATA_FILE, backupFile);
+    }
+    // 修复放在 try 之外：修复本身出错不应被误判为「数据文件损坏」而改名备份
+    if (data) {
+      const dup = repairDuplicateIds(data);
+      if (dup > 0) { try { record('repair_ids', 'duplicates=' + dup); } catch (e2) {} }
+      return data;
     }
   }
   const data = { expenses: [], version: 1 };
@@ -47,6 +54,50 @@ function loadData() {
 
 function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+/*
+ * 生成下一个可用 ID：取现有最大 ID + 1。
+ * 修复前用的是 expenses.length + 1 —— 删除任意一条后数组长度回退，
+ * 新记录的 ID 就会与仍然存在的旧记录撞号（2026-11-11 实际发生过，见 iterations/ITER-001.md）。
+ */
+function nextId(expenses) {
+  return expenses.reduce(function (max, e) {
+    const n = Number(e.id);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0) + 1;
+}
+
+/*
+ * 一次性修复历史数据中的重复 ID。
+ * 策略：按 created_at 升序重排为 1..N，保持记录的先后顺序不变；
+ * 只在检测到重复时执行，正常数据不受影响。
+ */
+function repairDuplicateIds(data) {
+  if (!data || !Array.isArray(data.expenses)) return 0;
+  const seen = new Set();
+  let dup = 0;
+  data.expenses.forEach(function (e) {
+    if (seen.has(e.id)) dup++;
+    seen.add(e.id);
+  });
+  if (dup === 0) return 0;
+
+  const order = new Map();
+  // created_at 是 zh-CN 的 '2026/11/9 19:19:17'，日、月不补零，
+  // 直接按字符串排序会把 11-10 排到 11-9 前面。因此用 date(YYYY-MM-DD) + 时间部分作排序键。
+  function sortKey(e) {
+    const t = String(e.created_at || '');
+    const timePart = t.indexOf(' ') >= 0 ? t.split(' ').pop() : '00:00:00';
+    return String(e.date || '') + ' ' + timePart;
+  }
+  data.expenses.slice()
+    .sort(function (a, b) { return sortKey(a).localeCompare(sortKey(b)); })
+    .forEach(function (e, i) { order.set(e, i + 1); });
+  data.expenses.forEach(function (e) { e.id = order.get(e); });
+  saveData(data);
+  console.log('[WARN] 检测到 ' + dup + ' 条重复 ID，已按时间顺序重新编号 1..' + data.expenses.length);
+  return dup;
 }
 
 function logTelemetry(action, details = '', error = '', elapsed = 0) {
@@ -62,7 +113,7 @@ function addExpense(amount, category, note = '') {
     if (isNaN(amount) || amount <= 0) throw new Error('金额必须大于0');
     const data = loadData();
     const today = new Date().toISOString().split('T')[0];
-    data.expenses.push({ id: data.expenses.length + 1, amount, category, note, date: today, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
+    data.expenses.push({ id: nextId(data.expenses), amount, category, note, date: today, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
     saveData(data);
     const elapsed = Date.now() - start;
     logTelemetry('add', `amount=${amount}, category=${category}`, '', elapsed);
@@ -91,7 +142,7 @@ function batchAdd(input) {
       const note = parts[2] || '';
       if (isNaN(amount) || amount <= 0) { errors.push('金额无效: ' + entry); continue; }
       if (!CATEGORIES.includes(category)) { errors.push('类别无效: ' + entry); continue; }
-      data.expenses.push({ id: data.expenses.length + 1, amount, category, note, date: today, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
+      data.expenses.push({ id: nextId(data.expenses), amount, category, note, date: today, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
       added++;
     }
     saveData(data);
@@ -313,7 +364,7 @@ function addExpenseWithDate(amount, category, note, date) {
     if (isNaN(amount) || amount <= 0) throw new Error('金额必须大于0');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('日期格式: YYYY-MM-DD');
     const data = loadData();
-    data.expenses.push({ id: data.expenses.length + 1, amount, category, note, date, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
+    data.expenses.push({ id: nextId(data.expenses), amount, category, note, date, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
     saveData(data);
     const elapsed = Date.now() - start;
     logTelemetry('add_backdate', `amount=${amount}, category=${category}, date=${date}`, '', elapsed);
