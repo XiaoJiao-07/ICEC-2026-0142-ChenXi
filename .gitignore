@@ -1,0 +1,13 @@
+# 与考核无关的个人项目，不纳入本仓库
+FamilyVault/
+campus-delivery/
+
+# 运行环境与临时产物
+node_modules/
+*.exe
+*.log.bak
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store
