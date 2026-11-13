@@ -33,25 +33,30 @@ const { ensureDirs, loadData, logTelemetry, addExpense, batchAdd, deleteExpense,
   monthlyReport, checkAnomaly, backupData, restoreData } = require('./main');
 const readline = require('readline');
 
-// ==================== 8位用户反馈 ====================
-const USER_FEEDBACK = [
-  { name: '张同学', gender: '男', days: 5, comment: '挺方便的，双击就能记账，不用打开Excel那么麻烦。就是每次都要开命令行窗口，感觉有点原始。', suggestion: '加个预算上限提醒，超了就弹窗提示。' },
-  { name: '李同学', gender: '女', days: 7, comment: '分类统计做得不错，能清楚看到钱花在哪了。导出CSV用WPS打开也能正常显示。', suggestion: '类别可以自定义，或者多加几个常用类别。' },
-  { name: '王同学', gender: '男', days: 3, comment: '操作挺简单的，输入数字就行。但是记了三天就不想记了，每天吃饭都要记太麻烦了。', suggestion: '支持批量记账，比如一次输入多笔。' },
-  { name: '赵同学', gender: '女', days: 6, comment: '周报那个分类占比的条形图挺直观的，一看就知道餐饮占大头。', suggestion: '最好加个月报功能，看看一个月花了多少。' },
-  { name: '陈同学', gender: '男', days: 4, comment: '比之前用手机备忘录记清楚多了。有时候记错了想删掉或者修改，发现没有这个功能。', suggestion: '加个删除和修改记录的功能。' },
-  { name: '刘同学', gender: '女', days: 7, comment: '很适合月光族，每天记一下就知道自己花了多少。日均统计很有用。', suggestion: '能不能同步到云端？或者至少支持导入导出JSON备份。' },
-  { name: '孙同学', gender: '男', days: 2, comment: 'Node.js原生实现没有依赖，这点不错。功能比较基础，作为课程作业够用了。', suggestion: '可以加个数据可视化，用图表展示消费趋势。' },
-  { name: '周同学', gender: '女', days: 5, comment: '记账速度快，统计也清晰。喜欢每日汇总功能。有时候会忘记记，第二天补记日期不对。', suggestion: '补记的时候能手动选日期就好了。' },
-];
+// ==================== 用户反馈（读取 feedback_raw/ 的真实记录） ====================
+/*
+ * 2026-11-12 修改记录：
+ * 此处原有一段硬编码的 USER_FEEDBACK 常量，装着 8 条"大一信息与通信同学"的反馈。
+ * 那 8 条的来源无法被第三方核验（详见根目录 CORRECTION.md 与 user_feedback.md 末尾的说明），
+ * 把未经核验的反馈当作程序功能展示，会让使用者误以为这些评价是真的。
+ * 现改为读取 feedback_raw/ 目录：每收一位真实用户，就往该目录放一份 .md（含日期、原话、截图文件名）。
+ * 没有真实记录时如实显示"还没有"，不用任何预置内容填充。
+ */
+const fsp = require('fs');
+const pathp = require('path');
 
 function showFeedback() {
-  console.log('\n 用户反馈记录（8位大一信息与通信同学）\n' + '='.repeat(50));
-  for (const u of USER_FEEDBACK) {
-    console.log(`\n${u.name}（${u.gender}，大一，信息与通信）| 使用${u.days}天`);
-    console.log(`  评价：${u.comment}`);
-    console.log(`  建议：${u.suggestion}`);
-  }
+  const dir = pathp.join(__dirname, 'feedback_raw');
+  console.log('\n 真实用户反馈（feedback_raw/）\n' + '='.repeat(50));
+  const empty = '\n 还没有任何真实用户记录。每收一位用户，就往 feedback_raw/ 放一份 .md。';
+  if (!fsp.existsSync(dir)) { console.log(empty); return; }
+  const files = fsp.readdirSync(dir).filter(function (f) { return f.toLowerCase().endsWith('.md'); }).sort();
+  if (files.length === 0) { console.log(empty); return; }
+  files.forEach(function (f) {
+    console.log('\n----- ' + f + ' -----');
+    console.log(fsp.readFileSync(pathp.join(dir, f), 'utf-8').trim());
+  });
+  console.log('\n共 ' + files.length + ' 份真实用户记录。');
 }
 
 // ==================== 交互菜单 ====================
@@ -129,7 +134,7 @@ Commands:
   restore <file.json>             Restore data from backup file
   export                          Export CSV to Desktop
   logs                            View Telemetry logs
-  feedback                        View 8 user feedbacks
+  feedback                        View real user feedback (feedback_raw/)
   data                            View all expense data
   menu                            Interactive menu
   help                            Show this help
