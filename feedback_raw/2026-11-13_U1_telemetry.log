@@ -1,1 +1,3 @@
 {"seq":1,"ts":"2026-11-13T21:39:13.748+08:00","action":"startup","details":"args=menu","elapsed_ms":0,"error":"","prev_hash":"GENESIS","hash":"d8db0ef4a61f03ae3774fe513b430165ac6188463b615d31a4c32f61e5eeeb56"}
+{"seq":2,"ts":"2026-11-13T21:46:21.552+08:00","action":"startup","details":"args=menu","elapsed_ms":0,"error":"","prev_hash":"d8db0ef4a61f03ae3774fe513b430165ac6188463b615d31a4c32f61e5eeeb56","hash":"9cb54cd191732919add1e08731a74dcd935d2f3e62c18ec6c666e79b716549cf"}
+{"seq":3,"ts":"2026-11-13T21:47:06.170+08:00","action":"add","details":"amount=13, category=交通","elapsed_ms":10,"error":"","prev_hash":"9cb54cd191732919add1e08731a74dcd935d2f3e62c18ec6c666e79b716549cf","hash":"125b6a2a7f1c060bf5deff5e27e749f3e4e8cc5815f07b990a4f2384b415649b"}
