@@ -64,23 +64,24 @@ function ask(rl, question) { return new Promise(resolve => rl.question(question,
 
 async function runMenu() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const CATS = { '1': '餐饮', '2': '交通', '3': '购物', '4': '娱乐', '5': '学习', '6': '医疗', '7': '其他' };
+  const CAT_LINE = '类别: 1-餐饮 2-交通 3-购物 4-娱乐 5-学习 6-医疗 7-其他';
   while (true) {
     console.log('\n============================');
-    console.log('  Campus Expense Tracker');
+    console.log('  校园生活费记账  v2.4');
     console.log('============================');
-    console.log('  1. Add expense   2. Recent records   3. Daily summary');
-    console.log('  4. Weekly report  5. Export CSV       6. View logs');
-    console.log('  7. Feedback       8. All data         9. Budget');
-    console.log('  a. Trend chart    b. Backdate add     0. Exit');
+    console.log('  1. 记一笔        2. 最近记录      3. 今日汇总');
+    console.log('  4. 本周报告      5. 导出 CSV      6. 查看日志');
+    console.log('  7. 用户反馈      8. 全部数据      9. 预算');
+    console.log('  a. 消费趋势      b. 补记某天      0. 退出');
     console.log('');
-    const choice = (await ask(rl, 'Enter number: ')).trim();
+    const choice = (await ask(rl, '请输入序号: ')).trim();
     if (choice === '1') {
-      const amount = (await ask(rl, 'Amount (yuan): ')).trim();
-      console.log('Category: 1-Food 2-Transport 3-Shopping 4-Fun 5-Study 6-Medical 7-Other');
-      const catNum = (await ask(rl, 'Select number: ')).trim();
-      const note = (await ask(rl, 'Note (Enter to skip): ')).trim();
-      const cats = { '1': '餐饮', '2': '交通', '3': '购物', '4': '娱乐', '5': '学习', '6': '医疗', '7': '其他' };
-      addExpense(amount, cats[catNum] || '其他', note);
+      const amount = (await ask(rl, '金额（元）: ')).trim();
+      console.log(CAT_LINE);
+      const catNum = (await ask(rl, '请选类别序号: ')).trim();
+      const note = (await ask(rl, '备注（直接回车跳过）: ')).trim();
+      addExpense(amount, CATS[catNum] || '其他', note);
     } else if (choice === '2') { listExpenses(); }
     else if (choice === '3') { dailySummary(); }
     else if (choice === '4') { weeklyReport(); }
@@ -89,23 +90,22 @@ async function runMenu() {
     else if (choice === '7') { showFeedback(); }
     else if (choice === '8') { showData(); }
     else if (choice === '9') {
-      console.log('  b: Set budget  c: Check budget');
-      const sub = (await ask(rl, 'Select: ')).trim();
-      if (sub === 'b') { const amt = (await ask(rl, 'Monthly budget (yuan): ')).trim(); setBudget(amt); }
+      console.log('  b: 设置预算  c: 查看预算');
+      const sub = (await ask(rl, '请选择: ')).trim();
+      if (sub === 'b') { const amt = (await ask(rl, '月预算（元）: ')).trim(); setBudget(amt); }
       else if (sub === 'c') { checkBudget(); }
     }
     else if (choice === 'a') { trendChart(); }
     else if (choice === 'b') {
-      const amount = (await ask(rl, 'Amount: ')).trim();
-      console.log('Category: 1-Food 2-Transport 3-Shopping 4-Fun 5-Study 6-Medical 7-Other');
-      const catNum = (await ask(rl, 'Select number: ')).trim();
-      const note = (await ask(rl, 'Note: ')).trim();
-      const date = (await ask(rl, 'Date (YYYY-MM-DD): ')).trim();
-      const cats = { '1': '餐饮', '2': '交通', '3': '购物', '4': '娱乐', '5': '学习', '6': '医疗', '7': '其他' };
-      addExpenseWithDate(amount, cats[catNum] || '其他', note, date);
+      const amount = (await ask(rl, '金额（元）: ')).trim();
+      console.log(CAT_LINE);
+      const catNum = (await ask(rl, '请选类别序号: ')).trim();
+      const note = (await ask(rl, '备注（直接回车跳过）: ')).trim();
+      const date = (await ask(rl, '日期（YYYY-MM-DD）: ')).trim();
+      addExpenseWithDate(amount, CATS[catNum] || '其他', note, date);
     }
-    else if (choice === '0') { console.log('Bye!'); rl.close(); process.exit(0); }
-    else { console.log('Invalid input, try again'); }
+    else if (choice === '0') { console.log('再见！'); rl.close(); process.exit(0); }
+    else { console.log('输入无效，请重新输入。可选：1-9 / a / b / 0'); }
   }
 }
 
