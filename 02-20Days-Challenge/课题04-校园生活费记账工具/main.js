@@ -24,6 +24,12 @@ const callCount = {};
 // 此后日志一律由 src/telemetry.js 在运行时 append-only 追加。
 
 // ==================== 基础函数 ====================
+// 2026-11-15 ITER-004：一律用「本地日期」，不用 toISOString()。
+// toISOString() 返回 UTC，本地 00:00–07:59 会被算成前一天——而这段时间正好是"早餐那一笔"。
+function pad2(n) { return String(n).padStart(2, '0'); }
+function localDate(d = new Date()) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function localMonth(d = new Date()) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; }
+
 function ensureDirs() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
@@ -112,7 +118,7 @@ function addExpense(amount, category, note = '') {
     amount = parseFloat(amount);
     if (isNaN(amount) || amount <= 0) throw new Error('金额必须大于0');
     const data = loadData();
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDate();
     data.expenses.push({ id: nextId(data.expenses), amount, category, note, date: today, created_at: new Date().toLocaleString('zh-CN', { hour12: false }) });
     saveData(data);
     const elapsed = Date.now() - start;
@@ -131,7 +137,7 @@ function batchAdd(input) {
     const entries = input.split('|').map(s => s.trim()).filter(s => s);
     if (entries.length === 0) throw new Error('批量记账格式: 金额,类别,备注|金额,类别,备注');
     const data = loadData();
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDate();
     let added = 0;
     const errors = [];
     for (const entry of entries) {
@@ -201,7 +207,7 @@ function listExpenses(days = 7) {
   try {
     const data = loadData();
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const cutoffStr = localDate(cutoff);
     const filtered = data.expenses.filter(e => e.date >= cutoffStr).sort((a, b) => b.date.localeCompare(a.date));
     if (filtered.length === 0) { console.log(`最近${days}天无记录`); return; }
     console.log(`\n${'日期'.padEnd(12)} ${'金额'.padStart(8)} ${'类别'.padEnd(6)} 备注`);
@@ -218,7 +224,7 @@ function dailySummary(targetDate = null) {
   const start = Date.now();
   try {
     const data = loadData();
-    if (!targetDate) targetDate = new Date().toISOString().split('T')[0];
+    if (!targetDate) targetDate = localDate();
     const dayExpenses = data.expenses.filter(e => e.date === targetDate);
     if (dayExpenses.length === 0) { console.log(`${targetDate} 无记录`); return; }
     const total = dayExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -239,7 +245,7 @@ function weeklyReport() {
   try {
     const data = loadData();
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
-    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const cutoffStr = localDate(cutoff);
     const weekExpenses = data.expenses.filter(e => e.date >= cutoffStr);
     if (weekExpenses.length === 0) { console.log('最近7天无记录'); return; }
     const total = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
@@ -310,8 +316,8 @@ function checkBudget() {
     const { budget } = JSON.parse(fs.readFileSync(BUDGET_FILE, 'utf-8'));
     const data = loadData();
     const now = new Date();
-    const monthStart = now.toISOString().slice(0, 7) + '-01';
-    const monthEnd = now.toISOString().slice(0, 7) + '-31';
+    const monthStart = localMonth(now) + '-01';
+    const monthEnd = localMonth(now) + '-31';
     const monthExpenses = data.expenses.filter(e => e.date >= monthStart && e.date <= monthEnd);
     const spent = monthExpenses.reduce((sum, e) => sum + e.amount, 0);
     const remaining = budget - spent;
@@ -336,7 +342,7 @@ function trendChart(days = 7) {
     const data = loadData();
     const dailyTotals = {};
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
-    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const cutoffStr = localDate(cutoff);
     for (const e of data.expenses) {
       if (e.date >= cutoffStr) dailyTotals[e.date] = (dailyTotals[e.date] || 0) + e.amount;
     }
@@ -380,7 +386,7 @@ function monthlyReport(month = null) {
   const start = Date.now();
   try {
     const data = loadData();
-    if (!month) month = new Date().toISOString().slice(0, 7);
+    if (!month) month = localMonth();
     const monthStart = month + '-01';
     const monthEnd = month + '-31';
     const monthExpenses = data.expenses.filter(e => e.date >= monthStart && e.date <= monthEnd);
@@ -423,11 +429,11 @@ function checkAnomaly() {
   const start = Date.now();
   try {
     const data = loadData();
-    const today = new Date().toISOString().split('T')[0];
+    const today = localDate();
     const todayExpenses = data.expenses.filter(e => e.date === today);
     const todayTotal = todayExpenses.reduce((sum, e) => sum + e.amount, 0);
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
-    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const cutoffStr = localDate(cutoff);
     const weekExpenses = data.expenses.filter(e => e.date >= cutoffStr && e.date < today);
     if (weekExpenses.length === 0) { console.log('[INFO] 无历史数据，无法判断'); return; }
     const dailyTotals = {};
@@ -453,7 +459,7 @@ function backupData() {
   const start = Date.now();
   try {
     const data = loadData();
-    const backupFile = path.join(process.env.USERPROFILE, 'Desktop', `expenses_backup_${new Date().toISOString().split('T')[0]}.json`);
+    const backupFile = path.join(process.env.USERPROFILE, 'Desktop', `expenses_backup_${localDate()}.json`);
     fs.writeFileSync(backupFile, JSON.stringify(data, null, 2), 'utf-8');
     console.log(`[OK] 已备份到 ${backupFile}`);
     console.log(`  共 ${data.expenses.length} 条记录`);
@@ -479,5 +485,6 @@ module.exports = {
   listExpenses, dailySummary, weeklyReport, exportCSV,
   showLogs, showData, setBudget, checkBudget, trendChart, addExpenseWithDate,
   monthlyReport, checkAnomaly, backupData, restoreData,
+  localDate, localMonth,
   CATEGORIES
 };
