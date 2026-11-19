@@ -111,6 +111,15 @@ function logTelemetry(action, details = '', error = '', elapsed = 0) {
 }
 
 // ==================== 核心功能 ====================
+// ITER-005（2026-11-19）：记完后回答「这样就行了吗」
+// 依据：U6 在 [OK] 之后仍问「这样就行了吗」；U4 不信重开 3 次；U5 坐着不动
+// 只加输出，不改逻辑：data 已由 loadData() 取得，此处零额外 IO
+function todayLine(data, today) {
+  const list = data.expenses.filter(function (e) { return e.date === today; });
+  const sum = list.reduce(function (s, e) { return s + e.amount; }, 0);
+  return '今天已记 ' + list.length + ' 笔，合计 ' + sum.toFixed(2) + ' 元。';
+}
+
 function addExpense(amount, category, note = '') {
   const start = Date.now();
   try {
@@ -124,6 +133,7 @@ function addExpense(amount, category, note = '') {
     const elapsed = Date.now() - start;
     logTelemetry('add', `amount=${amount}, category=${category}`, '', elapsed);
     console.log(`[OK] 已记录: ${amount.toFixed(2)} [${category}] ${note}  (耗时 ${elapsed}ms)`);
+    console.log(`${todayLine(data, today)}按 2 可核对，按 1 再记一笔。`);
   } catch (e) {
     logTelemetry('add', `amount=${amount}, category=${category}`, e.message, Date.now() - start);
     console.log(`[ERROR] ${e.message}`);
@@ -155,6 +165,7 @@ function batchAdd(input) {
     const elapsed = Date.now() - start;
     logTelemetry('batch_add', 'entries=' + entries.length + ', added=' + added, errors.join('; '), elapsed);
     console.log('[OK] 批量记账完成: 成功 ' + added + '/' + entries.length + ' 笔 (耗时 ' + elapsed + 'ms)');
+    console.log(todayLine(data, today));
     if (errors.length > 0) { console.log('[WARN] 以下条目跳过:'); errors.forEach(function(e) { console.log('  - ' + e); }); }
   } catch (e) {
     logTelemetry('batch_add', 'input=' + input, e.message, Date.now() - start);
