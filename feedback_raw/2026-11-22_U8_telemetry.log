@@ -1,0 +1,2 @@
+{"seq":1,"ts":"2026-11-22T13:05:56.600+08:00","action":"startup","details":"args=menu","elapsed_ms":0,"error":"","prev_hash":"GENESIS","hash":"fda33b1b14db99dc1a0e1aaaea23ae14e763421d32996488647277c6f6ac9c0d"}
+{"seq":2,"ts":"2026-11-22T13:06:08.530+08:00","action":"add","details":"amount=15, category=餐饮","elapsed_ms":87,"error":"","prev_hash":"fda33b1b14db99dc1a0e1aaaea23ae14e763421d32996488647277c6f6ac9c0d","hash":"099ac35b692f7d36e312a042c7d9154404869ef13f0ebe975037f9f46938a335"}
